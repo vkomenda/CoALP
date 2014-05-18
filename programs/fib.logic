@@ -1,0 +1,20 @@
+% Modes
+add  (+!, +!, -!) 
+add  (+!, -!, -!)
+fibs (+!, +!, -?)
+fibs (+!, -!, -?)
+fibs (-!, -!, -?)
+nth  (+!, -?, -!) 
+fib  (+!, -!)
+
+
+% Program
+add(z,Y,Y).
+add(s(X),Y,s(Z)) :- add(X,Y,Z).
+fibs(X,Y,cons(X,S)) :- add(X,Y,Z), fibs(Y,Z,S).
+nth(z,cons(X,S),X).
+nth(s(N),cons(X,S),Y) :- nth(N,S,Y).
+fib(N,X) :- fibs(z,s(z),S), nth(N,S,X).
+
+% Queries
+:- fib(s(s(s(z))),X).

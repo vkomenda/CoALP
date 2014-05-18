@@ -1,0 +1,5 @@
+path(X,cons(Node,Path)):- edge(X,Node), path(Node,Path).
+path(X,nil).
+
+edge(0,0).
+edge(X,s(X)).

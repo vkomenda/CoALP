@@ -1,0 +1,3 @@
+nats(scons(X,scons(Y,N))):-inc(X,Y),nats(scons(Y,N)).
+
+inc(X,s(X)).

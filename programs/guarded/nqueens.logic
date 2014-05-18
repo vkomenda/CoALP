@@ -1,0 +1,28 @@
+solution(Queens) :- permutation(cons(s(0),cons(s(s(0)),cons(s(s(s(0))),
+            cons(s(s(s(s(0)))),cons(s(s(s(s(s(0))))),cons(s(s(s(s(s(s(0)))))),
+            cons(s(s(s(s(s(s(s(0))))))),cons(s(s(s(s(s(s(s(s(0)))))))),nil)))))))),
+            Queens), safe(Queens).
+
+permutation(nil,nil).
+
+permutation(cons(Head,Tail),PermList) :-
+          permutation(Tail,PermTail), del(Head,PermList,PermTail).
+
+del(Item,cons(Item,List),List).
+del(Item,cons(First,List),cons(First,List1)) :- del(Item,List,List1).
+
+safe(nil).
+safe(cons(Queen,Others)) :- safe(Others), noattack(Queen,Others,s(0)).
+
+minus(X,0,X).
+minus(0,X,0).
+minus(s(X),s(Y),Z) :- minus(X,Y,Z).
+
+notequal(0,X).
+notequal(X,0).
+notequal(s(X),s(Y)) :- notequal(X,Y).
+
+noattack(X,nil,Y).
+noattack(Y,cons(Y1,Ylist),Xdist) :-
+       minus(Y1,Y,Z), notequal(Z,Xdist), minus(Y,Y1,Z1), notequal(Z1,Xdist),
+       noattack(Y,Ylist,s(Xdist)).

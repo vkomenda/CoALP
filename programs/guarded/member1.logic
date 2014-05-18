@@ -1,0 +1,2 @@
+member(H,cons(H,T)).
+member(H,cons(Y,T)) :- member(H,T).

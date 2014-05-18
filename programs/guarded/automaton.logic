@@ -1,0 +1,7 @@
+automaton(cons(X,T), S) :- trans(S, X, NS), automaton(T, NS).
+
+trans(s0, a, s1). 
+trans(s1, b, s2).
+trans(s2, c, s3). 
+trans(s3, d, s0).
+trans(s2, e, s0).

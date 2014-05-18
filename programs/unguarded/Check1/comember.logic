@@ -1,0 +1,3 @@
+drop (X, scons (H, T), T).
+drop (H, scons (H1, T), T1) :- drop (H, T, T1).
+comember(X,S) :- drop(X,S,S1), comember(X,S1).

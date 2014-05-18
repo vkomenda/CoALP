@@ -1,0 +1,15 @@
+parent(greg,john).
+parent(mary,john).
+parent(greg,jess).
+parent(mary,jess).
+parent(jack,greg).
+parent(jill,greg).
+male(john).
+male(mark).
+male(greg).
+male(jack).
+female(mary).
+female(jill).
+female(jess).
+mother(X,Y):- female(X), parent(X,Y).
+son(X,Y) :- male(X), parent(Y,X).

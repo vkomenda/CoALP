@@ -1,0 +1,14 @@
+sort(X):-permutation(cons(s(s(s(s(0)))),cons(s(s(s(0))),cons(s(s(0)),cons(s(0),nil)))),X),sorted(X).
+
+permutation(nil,nil).
+permutation(cons(Head,Tail),PermList) :- permutation(Tail,PermTail), del(Head,PermList,PermTail).
+
+del(Item,cons(Item,List),List).
+del(Item,cons(First,List),cons(First,List1)) :- del(Item,List,List1).
+
+less(0,s(X)).
+less(s(N),s(M)):-less(N,M).
+
+sorted(nil).
+sorted(cons(H,nil)).
+sorted(cons(H,cons(H1,T))):-less(H,H1),sorted(cons(H1,T)).

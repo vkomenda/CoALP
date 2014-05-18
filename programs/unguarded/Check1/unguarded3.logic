@@ -1,0 +1,1 @@
+stream2(scons(X,Y)):-bit(X), stream2(scons(X,Y)).

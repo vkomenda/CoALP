@@ -1,0 +1,11 @@
+eq(X,X).
+
+f(T) :- eq(T,arrow(Tx,Tx)).
+g(T) :- eq(T,arrow(Ty,pair(T1,T2))), f(Tf1), eq(Tf1,arrow(bool,T1)), f(Tf2), eq(Tf2, arrow(Ty,T2)).
+
+:- g(T).
+
+eq(-!,-!)
+f(-!)
+g(-!)
+

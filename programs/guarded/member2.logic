@@ -1,0 +1,4 @@
+drop(H,cons(H,T),T).
+drop(H,cons(H1,T),T1) :- drop(H,T,T1).
+member(H,L) :- drop(X,L,T).
+

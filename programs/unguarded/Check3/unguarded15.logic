@@ -1,0 +1,43 @@
+q(s(s(Q1),Q2,Q3),1):-q(s(Q2,Q3,s(Q1)),2).
+q(s(s(Q1),Q2,Q3),2):-q(s(Q2,Q3,s(Q1)),3).
+q(s(s(Q1),Q2,Q3),3):-q(s(Q2,Q3,s(Q1)),1).
+
+%?- q(s(s(X),s(X),s(X)),1).
+
+% just checking cotrees/clauses:
+%
+% q(s(s(Q1),Q2,Q3),1)
+% |
+% q(s(Q2,Q3,s(Q1)),2)
+% -------------
+% guarded
+%
+% q(s(s(Q1),Q2,Q3),2)
+% |
+% q(s(Q2,Q3,s(Q1)),3)
+% --------------
+% guarded
+%
+% q(s(s(Q1),Q2,Q3),3)
+% |
+% q(s(Q2,Q3,s(Q1)),1)
+% --------------
+% guarded
+%
+% checking with unification
+%
+% q(s(s(Q1),Q2,Q3),1)
+% |
+% q(s(Q2,Q3,s(Q1)),2)
+% 
+% subst Q2/s(Q1'),
+%
+% q(s(s(Q1),s(Q1'),Q3),1)
+% |
+% q(s(s(Q1'),Q3,s(Q1)),2)
+% |
+% q(s(Q3,s(Q1),s(Q1')),3)
+% -------------------------
+% guarded because q(s(s(Q1),s(Q1'),Q3),1) :- q(s(s(Q1'),Q3,s(Q1)),2) is guarded.
+%
+% ...

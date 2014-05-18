@@ -1,0 +1,2 @@
+append(nil,X,X).
+append(cons(H,T),Y,cons(H,Z)):-append(T,Y,Z).

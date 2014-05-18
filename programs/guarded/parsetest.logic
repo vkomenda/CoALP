@@ -1,0 +1,9 @@
+nat(0).
+nat(s(X)):-nat(X).
+
+list(nil).
+list(cons(X,Y)):-nat(X),list(Y).
+
+'='(X,X).
+
+equal(X,Y):-X=Y.

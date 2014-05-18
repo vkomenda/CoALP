@@ -1,0 +1,2 @@
+connected(X,Y):-connected(Z,Y),edge(X,Z).
+connected(X,X).

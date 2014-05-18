@@ -1,0 +1,21 @@
+eq   (X, X).
+cons (X)  :- eq (X, -> (Y, -> (list (Y), list (Y)))).
+plus (X)  :- eq (X, -> (int, -> (int, int))).
+nil  (X)  :- eq (X, list (Y)).
+
+length (X) :- eq   (X, -> (Y, Z)),
+              nil  (Y),
+              eq   (Z, int),
+              cons (W),
+              eq   (W, -> (W1, -> (W2, Y))),
+              plus (U),
+              eq   (U, -> (int, -> (Z, Z))),
+              eq   (W2, Y).
+
+:- length (X).
+
+length (-!)
+plus   (-!)
+cons   (-!)
+nil    (-!)
+eq     (-!, -!)

@@ -1,0 +1,2 @@
+int(X,cons(X,Y)) :- int(s(X),Y).
+generateinfinitelist(I) :- int(0,I).

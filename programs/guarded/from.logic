@@ -1,0 +1,1 @@
+from(N,cons(N,T)):-from(s(N),T).

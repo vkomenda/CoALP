@@ -1,0 +1,2 @@
+q(cons(X,Y)) :- q2(cons(Z,cons(X,Y))).
+q2(cons(Z,cons(X,Y))) :- q(Y).

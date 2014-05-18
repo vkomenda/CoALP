@@ -1,0 +1,156 @@
+name:          CoALP
+--             ,------- release
+--             | ,----- pre-release
+--             | | ,--- fixes and new functionality
+--             | | |
+version:       0.0.3
+license:       LGPLv3
+author:        Vladimir Komendantskiy <komendantsky@gmail.com>,
+               Jónathan Heras <joheras@gmail.com>
+maintainer:    Vladimir Komendantskiy <komendantsky@gmail.com>
+category:      CoALP
+synopsis:      Coalgebraic logic programming library
+stability:     experimental
+build-type:    Simple
+cabal-version: >= 1.16
+
+source-repository master
+  type:     git
+  location: https://github.com/vkomenda/CoALP.git
+
+-- Event logs conflict with profiling. Hence a special flag to turn event logs
+-- on and to turn profiling off.
+flag eventlog
+  description: Allows to generate event logs for ThreadScope.
+  default:     False
+
+
+library
+  hs-source-dirs:   lib
+
+  default-language: Haskell2010
+
+  exposed-modules:  CoALP
+                    CoALP.UI
+
+  other-modules:    CoALP.Tree
+                    CoALP.Subst
+                    CoALP.Clause
+                    CoALP.Term
+                    CoALP.Mode
+                    CoALP.Guards
+                    CoALP.UI.Dot
+                    CoALP.UI.Parser
+                    CoALP.UI.Printer
+
+  if flag(eventlog)
+    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
+  else
+    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
+
+  build-depends:    base                 >= 4.6,
+                    containers           >= 0.5,
+                    mtl                  >= 2.1,
+                    directory,
+                    hashable,
+                    deepseq,
+                    parsec               >= 3.1,
+                    process              >= 1.0,
+                    transformers         >= 0.3,
+                    unordered-containers >= 0.2.3
+
+
+executable CoALPi
+  hs-source-dirs:   interpreter
+
+  main-is:          CoALPi.hs
+
+  other-modules:    CoALP.Interpreter.Options
+
+  default-language: Haskell2010
+
+  if flag(eventlog)
+    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
+  else
+    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
+
+  build-depends:    base                 >= 4.6,
+                    CoALP                >= 0.0.1,
+                    containers           >= 0.5,
+                    mtl                  >= 2.1,
+                    old-locale,
+                    time                 >= 1.4,
+                    transformers         >= 0.3,
+                    parsec               >= 3.1,
+                    deepseq,
+                    process              >= 1.1,
+                    unordered-containers >= 0.2.3,
+                    optparse-applicative >= 0.7
+
+  default-extensions: BangPatterns
+
+
+executable CoALP-benchmark-fibs
+  hs-source-dirs:   benchmarks
+
+  main-is:          Fibs.hs
+
+  default-language: Haskell2010
+
+  if flag(eventlog)
+    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
+  else
+    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
+
+  build-depends:    base     >= 4.6,
+                    CoALP    >= 0.0.1,
+                    containers >= 0.5,
+                    deepseq  >= 1.3,
+                    time     >= 1.4,
+                    unordered-containers >= 0.2.3
+
+  default-extensions: BangPatterns
+
+
+executable CoALP-benchmark-automata
+  hs-source-dirs:   benchmarks
+
+  main-is:          Automata.hs
+
+  default-language: Haskell2010
+
+  if flag(eventlog)
+    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
+  else
+    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
+
+  build-depends:    base     >= 4.6,
+                    CoALP    >= 0.0.1,
+                    containers >= 0.5,
+                    deepseq  >= 1.3,
+                    time     >= 1.4,
+                    unordered-containers >= 0.2.3
+
+  default-extensions: BangPatterns
+
+
+test-suite CoALP-tests
+  type:             exitcode-stdio-1.0
+
+  hs-source-dirs:   tests
+
+  main-is:          Tests.hs
+
+  other-modules:    CoALP.Tests.Unit.Subst
+                    CoALP.Tests.Unit.Guards
+
+  default-language: Haskell2010
+
+  ghc-options:      -O2 -Wall -rtsopts -threaded
+
+  build-depends:    base        >= 4.6,
+                    CoALP       >= 0.0.1,
+                    containers  >= 0.5,
+                    directory,
+                    tasty       >= 0.3,
+                    tasty-hunit >= 0.2

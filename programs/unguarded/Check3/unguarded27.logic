@@ -1,0 +1,6 @@
+% unguarged19 and unguarded27 were formerly unguarded in Check 1.  Check 1 does
+% not any more perform an assignment of all variables in the subterm to a
+% functional symbol that occurs only in the head subterm. However, these two
+% programs fail Check 3.  -- VK
+
+f(s(X),Y):-f(Y,s(Z)).
