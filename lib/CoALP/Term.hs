@@ -102,3 +102,13 @@ foldrf f z (Fun a ts) = foldr (flip (foldrf f)) (f (Left a) z) ts
 isFun :: Term a b -> Bool
 isFun (Fun _ _) = True
 isFun _         = False
+
+type PositionalTerm a b c = Term (a, [c]) (b, [c])
+
+-- | Labels subterms of a given term with words of a tree language.
+labelSubterms :: Enum c => Term a b -> PositionalTerm a b c
+labelSubterms = go [] where
+  go cs (Var b)    = Var (b, cs)
+  go cs (Fun f ts) = Fun (f, cs) $
+                     (\(t, c) -> go (cs ++ [c]) t) <$>
+                     zip ts (enumFrom (toEnum 0))

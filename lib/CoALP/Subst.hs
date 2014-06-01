@@ -16,6 +16,7 @@ import Control.Monad.State.Lazy
 import Control.Applicative
 import Control.DeepSeq
 import qualified Data.HashSet as HashSet
+import Data.HashSet (HashSet)
 import qualified Data.HashMap.Lazy as HashMap
 import Data.HashMap.Lazy (HashMap)
 import Data.Hashable
@@ -155,6 +156,19 @@ checkSubstFound s@(Subst sm) =
     if HashMap.null $ HashMap.filterWithKey loopy sm
     then Right ()
     else Left OccursCheckFailed
+         )
+  where
+    loopy v t = isFun t && any (== v) t
+
+checkSubstFoundPos :: (Eq a, Eq b, Hashable b, Eq c, Enum c, Hashable c) =>
+                      State ([c], HashSet [c], Subst (Term a) b b)
+                            (Either SubstError (HashSet [c]))
+checkSubstFoundPos = do
+  (pos, acc, Subst s) <- get
+  return (
+    if HashMap.null $ HashMap.filterWithKey loopy s
+    then (Right $ HashSet.insert pos acc)
+    else (Left OccursCheckFailed)
          )
   where
     loopy v t = isFun t && any (== v) t
