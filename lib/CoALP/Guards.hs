@@ -31,15 +31,7 @@ type ArityVars a b = (Arity a, Vars b)
 type Count         = Int
 type CountVars   b = (Count, Vars b)
 
--- | Labels subterms of a given term with words of a tree language.
-labelSubterms :: Enum c => Term a b -> Term (a, [c]) (b, [c])
-labelSubterms = go [] where
-  go cs (Var b)    = Var (b, cs)
-  go cs (Fun f ts) = Fun (f, cs) $
-                     (\(t, c) -> go (cs ++ [c]) t) <$>
-                     zip ts (enumFrom (toEnum 0))
-
--- | for each occurrence of a functional symbol, stores its arity and variables
+-- | For each occurrence of a functional symbol, stores its arity and variables
 -- under that occurrence.
 arityVarsTerm :: (Eq b, Hashable b) => Term a b -> Term (ArityVars a b) b
 arityVarsTerm (Var b)    = Var b
