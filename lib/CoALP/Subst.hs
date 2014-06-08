@@ -12,6 +12,7 @@ import GHC.Exts
 
 import CoALP.Term
 
+import Control.Arrow
 import Control.Monad.State.Lazy
 import Control.Applicative
 import Control.DeepSeq
@@ -139,37 +140,45 @@ data SubstError = IdentMismatch
 type SubstOut = Either SubstError ()
 type SubstComput m a b = State (Subst m a b) SubstOut
 
+-- | Type of subterm position. Positions are little-endian: from leaves to the
+-- root, because this way they are appended by consing, if recursing from the
+-- root. And because they are not currently used for traversal but only for
+-- comparson by equality, the endianness is inessential.
+type Pos = [Int]
+
+-- | Sets of positions. These are required for the mgu guardedness check.
+type PosSet = HashSet Pos
+
 -- | Substitution error reporting in a monad context.
 substError :: Monad m => SubstError -> m SubstOut
 substError = return . Left
 
 -- | Immediately returns a substitution in a monad context.
-substFound :: (Monad m, MonadState s m) => s -> m SubstOut
-substFound s = put s >> return (Right ())
+substFound :: Monad m => m SubstOut
+substFound = return $ Right ()
 
 -- | Returns a substitution in a 'Term' monad context. Performs occurs check.
-checkSubstFound :: (Eq a, Eq b, Hashable b) => Subst (Term a) b b ->
-                   SubstComput (Term a) b b
-checkSubstFound s@(Subst sm) =
-  put s >>
+checkSubstFound :: (Eq a, Eq b, Hashable b) => SubstComput (Term a) b b
+checkSubstFound = do
+  Subst s <- get
   return (
-    if HashMap.null $ HashMap.filterWithKey loopy sm
+    if HashMap.null $ HashMap.filterWithKey loopy s
     then Right ()
     else Left OccursCheckFailed
          )
   where
     loopy v t = isFun t && any (== v) t
 
-checkSubstFoundPos :: (Eq a, Eq b, Hashable b, Eq c, Enum c, Hashable c) =>
-                      State ([c], HashSet [c], Subst (Term a) b b)
-                            (Either SubstError (HashSet [c]))
-checkSubstFoundPos = do
-  (pos, acc, Subst s) <- get
-  return (
-    if HashMap.null $ HashMap.filterWithKey loopy s
-    then (Right $ HashSet.insert pos acc)
-    else (Left OccursCheckFailed)
-         )
+checkSubstFoundPos :: (Eq a, Eq b, Hashable b) => Pos ->
+                      State (PosSet, Subst (Term a) b b) SubstOut
+checkSubstFoundPos p = do
+  (ps, Subst s) <- get
+  if HashMap.null $ HashMap.filterWithKey loopy s
+    then do
+        put (HashSet.insert p ps, Subst s)
+        return $ Right ()
+    else
+        return $ Left OccursCheckFailed
   where
     loopy v t = isFun t && any (== v) t
 
@@ -216,10 +225,30 @@ runSubstComputMaybe f a1 a2 =
 -- FIXME: disregards the starting state when binding variables to terms.
 mguTerm :: (Eq a, Eq b, Hashable b, Injectable b b) =>
            Term a b -> Term a b -> SubstComput (Term a) b b
-mguTerm (Var v) t   = checkSubstFound $ singleton v t
+mguTerm (Var v) t   = put (singleton v t) >> checkSubstFound
 mguTerm t u@(Var _) = mguTerm u t
 mguTerm (Fun c ts) (Fun d us)
   | c == d    = chainMgu mguTerm ts us
+  | otherwise = substError IdentMismatch
+
+-- | The mgu computation that records the positions of the matching subterms
+-- only of the right term.
+--
+-- FIXME: Consider the incoming substitution rather than discarding it.
+mguTermPos :: (Eq a, Eq b, Hashable b, Injectable b b) =>
+           (Term a b) -> (Pos, Term a b) ->
+           State (PosSet, Subst (Term a) b b) SubstOut
+mguTermPos (Var v) (p, t) = do
+  (ps, _) <- get
+  put (ps, singleton v t)
+  checkSubstFoundPos p
+mguTermPos t (p, Var v) = do
+  (ps, _) <- get
+  put (ps, singleton v t)
+  checkSubstFoundPos p
+mguTermPos (Fun c ts) (p, Fun d us)
+  | c == d = chainMguPos mguTermPos ts $
+             ((:p) *** id) <$> zip [0..length us - 1] us
   | otherwise = substError IdentMismatch
 
 -- | Computes a match in the state monad.
@@ -227,7 +256,7 @@ mguTerm (Fun c ts) (Fun d us)
 -- FIXME: disregards the starting state when binding variables to terms.
 matchTerm :: (Eq a, Eq b, Hashable b, Injectable b b) =>
              Term a b -> Term a b -> SubstComput (Term a) b b
-matchTerm (Var v) t = substFound $ singleton v t
+matchTerm (Var v) t = put (singleton v t) >> substFound
 matchTerm (Fun c ts) (Fun d us)
   | c == d    = chainMatch matchTerm ts us
   | otherwise = substError IdentMismatch
@@ -238,7 +267,7 @@ matchTerm _ _ = substError NonMatchable
 -- FIXME: disregards the starting state when binding variables to terms.
 renameTerm :: (Eq a, Eq b, Hashable b, Injectable b b) =>
               Term a b -> Term a b -> SubstComput (Term a) b b
-renameTerm (Var v) t@(Var _) = substFound $ singleton v t
+renameTerm (Var v) t@(Var _) = put (singleton v t) >> substFound
 renameTerm (Fun c ts) (Fun d us)
   | c == d     = chainMatch renameTerm ts us
   | otherwise  = substError IdentMismatch
@@ -250,7 +279,7 @@ renameTerm _ _ = substError NonRenameable
 chainMgu :: (Eq a, Eq b, Hashable b, Injectable b b) =>
             (Term a b -> Term a b -> SubstComput (Term a) b b) ->
             [Term a b] -> [Term a b] -> SubstComput (Term a) b b
-chainMgu _ []       []       = substFound $ identity
+chainMgu _ []       []       = put identity >> substFound
 chainMgu f (t : ts) (u : us) = do
   rl <- f t u
   case rl of
@@ -259,10 +288,42 @@ chainMgu f (t : ts) (u : us) = do
       let appl = (>>= subst sl)  -- if HashMap.null sl then id else (>>= subst sl)
       rr <- chainMgu f (appl <$> ts) (appl <$> us)
       case rr of
-        Right _ -> checkSubstFound . compose sl =<< get
+        Right _ -> do
+                   sr <- get
+                   put (compose sl sr)
+                   checkSubstFound
         e -> return e
     e -> return e
 chainMgu _ _ _ = substError ArgumentsDontAlign
+
+chainMguPos :: (Eq a, Eq b, Hashable b, Injectable b b) =>
+               (Term a b -> (Pos, Term a b) ->
+                State (PosSet, Subst (Term a) b b) SubstOut) ->
+               [Term a b] -> [(Pos, Term a b)] ->
+               State (PosSet, Subst (Term a) b b) SubstOut
+chainMguPos _ [] [] = do
+  (ps, _) <- get
+  put (ps, identity)
+  substFound
+chainMguPos f (t : ts) ((p, u) : us) = do
+  rl <- f t (p, u)
+  case rl of
+    Right _ -> do
+      (_, sl) <- get
+      let appl =        (>>= subst sl)
+          appr = id *** (>>= subst sl)
+      rr <- chainMguPos f (appl <$> ts) (appr <$> us)
+      case rr of
+        Right _ -> do
+          (pr, sr) <- get
+          r <- checkSubstFoundPos p -- check the r.h.s. substitution before
+                                    -- composing it with the l.h.s. substitution
+          case r of
+            Right _ -> put (pr, compose sl sr) >> substFound
+            e       -> return e
+        e -> return e
+    e -> return e
+chainMguPos _ _ _ = substError ArgumentsDontAlign
 
 -- | Chains a computation of match-type substitution (not rewriting the terms)
 -- through a pair of lists of terms where return from a recursive call merges
@@ -270,7 +331,7 @@ chainMgu _ _ _ = substError ArgumentsDontAlign
 chainMatch :: (Eq a, Eq b, Hashable b, Injectable b b) =>
               (Term a b -> Term a b -> SubstComput (Term a) b b) ->
               [Term a b] -> [Term a b] -> SubstComput (Term a) b b
-chainMatch _ []           []       = substFound identity
+chainMatch _ []           []       = put identity >> substFound
 chainMatch f ts0@(t : ts) (u : us) = do
   rl <- f t u
   case rl of
@@ -294,7 +355,7 @@ merge ts sl@(Subst msl) sr@(Subst msr) = do
   if any disagree $ zip3 (return <$> vs) (subst sl <$> vs) (subst sr <$> vs) then
     substError DisagreementOnVariables
   else
-    substFound $ Subst $ msl `HashMap.union` msr
+    put (Subst $ msl `HashMap.union` msr) >> substFound
   where
     vs = HashSet.toList $ HashSet.unions $ varsTerm <$> ts
     disagree (t0, t1, t2) = t0 /= t1 && t0 /= t2 && t1 /= t2
