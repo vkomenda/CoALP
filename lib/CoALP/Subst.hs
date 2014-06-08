@@ -220,6 +220,23 @@ runSubstComputMaybe f a1 a2 =
     (Right _, s) -> Just s
     _            -> Nothing
 
+-- | Runs a position-recording substitution computation.
+runSubstComputPos :: (Eq b, Hashable b) =>
+                  (m b -> (Pos, m b) ->
+                   State (PosSet, Subst (Term a) b b) SubstOut) ->
+                  m b -> m b -> (SubstOut, (PosSet, Subst (Term a) b b))
+runSubstComputPos f a1 a2 = runState (f a1 ([], a2)) (HashSet.empty, identity)
+
+-- | Same as 'runSubstComputPos' but forgets the error messages.
+runSubstComputPosMaybe :: (Eq b, Hashable b) =>
+                          (m b -> (Pos, m b) ->
+                           State (PosSet, Subst (Term a) b b) SubstOut) ->
+                          m b -> m b -> Maybe (PosSet, Subst (Term a) b b)
+runSubstComputPosMaybe f a1 a2 =
+  case runState (f a1 ([], a2)) (HashSet.empty, identity) of
+    (Right _, s) -> Just s
+    _            -> Nothing
+
 -- | Computes an mgu in the state monad.
 --
 -- FIXME: disregards the starting state when binding variables to terms.
