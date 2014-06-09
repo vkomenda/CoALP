@@ -14,6 +14,7 @@ import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
 
+import Control.Arrow
 import           Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import           Data.HashMap.Lazy (HashMap)
@@ -161,25 +162,57 @@ maxVarHistory =
    \t n -> n `max` foldr (max . Just) Nothing (HashSet.toList $ varsTerm t)
   ) Nothing
 
+type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
+
+maxVarPosHistory :: (Hashable b, Ord b, Num b) => BranchPosHistory a b -> Maybe b
+maxVarPosHistory =
+  (HashMap.foldr $ flip $ IntMap.foldr $ flip $ HashSet.foldr $ flip $ foldr $
+   \t n -> n `max` foldr (max . Just) Nothing (HashSet.toList $ varsTerm t)
+  ) Nothing
+
+liftPrPos :: (Eq a, Eq b, Hashable a, Hashable b, Num b, Ord b) =>
+          BranchPosHistory a b -> Program a b -> Program a b
+liftPrPos hist pr = Pr $ liftVarsClause ((+1) <$> maxVarPosHistory hist) <$> unPr pr
+
+guardedPosFun :: (Eq a, Eq b, Hashable a, Hashable b, Num b, Ord b,
+               Injectable b b) =>
+              (BranchPosHistory a b -> Program a b -> Term a b -> Bool) ->
+              BranchPosHistory a b -> Program a b -> Term a b -> Bool
+guardedPosFun f hist pr@(Pr cls) h@(Fun c ts) =
+  all (\(i, s) ->
+        (all (guardedClause . flip (:-) [h] . Fun c) . HashSet.toList <$> mvis i)
+          /= Just False &&
+        all (f (hist_h i) (liftPrPos (hist_h i) pr) . (>>= subst s)) (clBody (cls!!i))
+      ) $ h `matchHeads` cls
+  where
+    mvis i   = snd <$> (IntMap.lookup i =<< HashMap.lookup c hist)
+    hist_h i = HashMap.insertWith
+                 (IntMap.unionWith (\(ps1, ts1) (ps2, ts2) ->
+                                     (HashSet.union ps1 ps2, HashSet.union ts1 ts2)))
+                 c
+                 (IntMap.singleton i $ (HashSet.empty, HashSet.singleton ts))
+                 hist
+guardedPosFun _ _ _ (Var _) = False
+
 -- | Loop detection under mgus with a root term and history of unifications for
 -- each predicate symbol above the root.
 --
 -- FIXME: reduce code duplication with 'guardedMatch'.
 guardedMgu :: (Eq a, Eq b, Hashable a, Hashable b, Ord b, Num b,
                Injectable b b) =>
-              BranchHistory a b -> Program a b -> Term a b -> Bool
+              BranchPosHistory a b -> Program a b -> Term a b -> Bool
 guardedMgu hist pr@(Pr cls) h@(Fun c _)
   | null matches =
     all (\(i, s) ->
-          let hist_s  = fmap (fmap (HashSet.map (map (>>= subst s)))) hist
+          let hist_s  = fmap (fmap (id *** HashSet.map (map (>>= subst s)))) hist
               h_s     = h >>= subst s in
           null (clBody (cls!!i)) ||
           null (h_s `matchHeads` cls) ||
-          maybe (guardedMgu hist_s (liftPr hist_s pr) h_s)
+          maybe (guardedMgu hist_s (liftPrPos hist_s pr) h_s)
                 (all (guardedClause . flip (:-) [h_s] . Fun c) . HashSet.toList)
                 (mvis i hist_s)
         ) $ h `mguHeads` cls
-  | otherwise = guardedFun guardedMgu hist pr h
+  | otherwise = guardedPosFun guardedMgu hist pr h
   where
     matches = h `matchHeads` cls
     mvis i hi = return =<< IntMap.lookup i =<< HashMap.lookup c hi

@@ -333,11 +333,8 @@ chainMguPos f (t : ts) ((p, u) : us) = do
       case rr of
         Right _ -> do
           (pr, sr) <- get
-          r <- checkSubstFoundPos p -- check the r.h.s. substitution before
-                                    -- composing it with the l.h.s. substitution
-          case r of
-            Right _ -> put (pr, compose sl sr) >> substFound
-            e       -> return e
+          put (pr, compose sl sr)
+          checkSubstFoundPos p
         e -> return e
     e -> return e
 chainMguPos _ _ _ = substError ArgumentsDontAlign
