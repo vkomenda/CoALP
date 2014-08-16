@@ -3,7 +3,7 @@
 
 module CoALP.TreeLang where
 
-import Prelude hiding (foldr)
+import Prelude hiding (foldr, filter, zip, length, take)
 
 import Data.Sequence
 import Data.Set
@@ -23,3 +23,10 @@ treeLang l = foldr check True l
       EmptyR -> b
       v :> 0 -> v `member` l
       v :> i -> (v |> i - 1) `member` l
+
+-- ^ Sub-tree language at a given word.
+(\:) :: TreeWord -> TreeLang -> TreeLang
+(\:) w = Data.Set.filter $ \u ->
+  let p   = u `zip` w
+      len = length w in
+  length p == len && take len u == w
