@@ -44,9 +44,9 @@ empty = Set.empty
 -- branching property is not checked because the number of children of a tree
 -- node is at most 2^64 for 'Word64'.
 treeLang :: TreeLang -> Bool
-treeLang l = Set.foldr check True l
+treeLang l = foldr check True l
   where
     check w b = case viewr w of
       EmptyR -> b
-      v :> 0 -> v `member` l
-      v :> i -> (v |> i - 1) `member` l
+      v :> 0 -> v `member` l && b
+      v :> i -> (v |> i - 1) `member` l && b
