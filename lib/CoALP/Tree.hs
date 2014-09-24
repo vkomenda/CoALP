@@ -30,6 +30,41 @@ import Data.Foldable
 import Data.Traversable
 import Control.Applicative
 
+data ProgramFibre a = PF [Maybe (Clause a Int)]
+
+infix 3 :~
+
+-- | Correctness properties for a fibred clause @FC (h :- b) ps@
+--
+-- * @length b == length ps@
+--
+-- *
+--   > all (\i -> all (\j -> b!i == (ps!i)!j)
+--   >                [0 .. length (ps!i) - 1])
+--   >     [0 .. length b - 1]
+--   >
+--
+--   For this it is required to introduce a constant clause that is trivially
+--   unifiable with any other clause.
+--
+-- * There exists a program @p@ which unifies with each of @ps@, that is
+--
+--   > all (\i -> isJust (mguTerm (clHead p) (clHead (ps!i))) &&
+--   >            length (clBody p) == length (clBody (ps!i)) &&
+--   >            all (\j -> isJust $ mguTerm ((clBody p)!j) $
+--   >                                        (clBody (ps!i))!j)
+--   >                [0 .. length (clBody p) - 1])
+--   >     [0 .. length ps - 1]
+--
+data FibredClause a = Clause a Int :~ [ProgramFibre a]
+
+-- | Correctness properties for a tree @FCT (FC c ps) fcts@
+--
+-- *
+--
+data CoinductiveTree a = FCT (FibredClause a) [[Maybe (CoinductiveTree a)]]
+
+
 -- | @ANode a its@ is an atom with a possibly partial mapping from clauses to
 -- or-subtrees. Each of those or-subtrees corresponds to some clause number @i@
 -- such that the head of that clause has been unified with @a@ and its unified
@@ -146,7 +181,7 @@ renameANode (ANode locc lits) (ANode rocc rits) s = do
 -- | Accumulation of a variable renaming over labelled branches of a pair of
 -- and-nodes.
 renameONodes :: [(Int, ONode Occ)] -> [(Int, ONode Occ)] ->
-               Subst1 -> Maybe Subst1
+                Subst1 -> Maybe Subst1
 renameONodes [] [] s = Just s
 renameONodes ((il,tl):lts) ((ir,tr):rts) s
   | il /= ir = Nothing
