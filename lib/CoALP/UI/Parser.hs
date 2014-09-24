@@ -1,119 +1,87 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
--- |
--- * Terms parsers
+{-# LANGUAGE FlexibleContexts #-}
 
 module CoALP.UI.Parser where
 
-import CoALP
-import CoALP.UI.Printer ()  -- import only the type class instances
-
-import Control.DeepSeq
-import Control.Monad ( void )
 import Text.Parsec
 import Data.Functor.Identity
-import Control.Applicative ( (<$>), (<*) )
-import qualified Data.HashSet as HashSet
-import Data.HashMap.Lazy ( HashMap )
-import qualified Data.HashMap.Lazy as HashMap
+import           Data.Map (Map)
+import qualified Data.Map as Map
+import Control.Applicative ( (<*) )
+import Control.Monad.State.Lazy
+import Data.List (sortBy)
 
-data TermParserSt = TPS {tpsVars :: HashMap String Int, tpsNext :: Int}
-
-instance NFData TermParserSt
-
--- | These instances are only marginally useful. Consider rewriting the
--- combinatory version in a cleaner way in the ReadPrec monad. The precedence
--- argument can be used to indicate the next available number for a fresh
--- variable. The assignment of variables to variable names can be kept in a
--- state monad.
-instance Read Term1 where
-  readsPrec p s = do
-    return (fromStringSt onlyTerm    (TPS HashMap.empty p) s, "")
-
-instance Read Clause1 where
-  readsPrec p s = do
-    return (fromStringSt onlyClause  (TPS HashMap.empty p) s, "")
-
-instance Read Program1 where
-  readsPrec p s = do
-    return (fromStringSt onlyProgram (TPS HashMap.empty p) s, "")
-
-instance Read Goal1 where
-  readsPrec p s = do
-    return (fromStringSt onlyGoal    (TPS HashMap.empty p) s, "")
-
-instance Read ModeAssoc where
-  readsPrec _ s = do
-    return (fromStringSt onlyModeAssocs tpsInit s, "")
+import CoALP.CTree
+import CoALP.TermTree
+import CoALP.ClauseTree
 
 
-tpsInit :: TermParserSt
-tpsInit = TPS HashMap.empty 0
+--------------------------------------------------------------------------------
+------------------------------TPS Def and Basics--------------------------------
+--------------------------------------------------------------------------------
 
--- | Empties the known variables, e.g., to start parsing the next implicitly
--- quantified formula.
-forgetVars :: TermParser ()
-forgetVars = putState . TPS HashMap.empty . tpsNext =<< getState
-
+data TermParserSt = TPS {domainMap :: Map.Map [Int] String, parent :: [Int], child :: [Int], root :: Bool} deriving (Show)
 type TermParser = ParsecT String TermParserSt Identity
 
-symbolP :: TermParser Char
-symbolP = oneOf "!#$%&|*+-/<=>?@^_~"
+-- Creates an initial TPS
+tpsInit :: TermParserSt
+tpsInit = TPS Map.empty [] [1] False
 
-identRest :: TermParser String
-identRest = many (letter <|> symbolP <|> digit)
+-- resets the state to the initial TPS
+forgetVars :: TermParser ()
+forgetVars = putState tpsInit
 
-sep :: TermParser ()
-sep = skipMany1 space
+--------------------------------------------------------------------------------
+--------------------------Parsers for smallest elements-------------------------
+--------------------------------------------------------------------------------
 
-conId :: TermParser Ident
-conId = do
-  first <- lower <|> symbolP <|> digit
-  rest <- identRest
-  spaces
-  return $ first:rest
-
-con :: TermParser Term1
-con = conId >>= return . flip Fun []
-
-var :: TermParser Term1
-var = do
+-- Variable consists of a capital letter followed by a sequence of letters, valid symbols and digits
+variable :: TermParser ()
+variable = do
   first <- upper
   rest <- identRest
-  let v = first:rest
-  st <- getState
-  let (vs, nx) = (tpsVars st, tpsNext st)
-      (upd, x) = case HashMap.lookup v vs of
-        Nothing -> (putState (TPS (HashMap.insert v nx vs) (nx+1)), nx)
-        Just x0 -> (return (), x0)
-  upd
+  current <- getState
+  let expr = first:rest
+      newDomain = parent current ++ [last (child current)]
+      newChildCount = init (child current) ++ [last (child current) + 1]
+  putState $ TPS (Map.insert newDomain expr (domainMap current)) (parent current) newChildCount (root current)
   spaces
-  return $ Var x
+  return ()
 
+-- Function consists of a lower case letter, valid symbol or digit followed by a sequence of letters, valid symbols and digits
+-- This occurence is called when there are no arugments for this function
+function :: TermParser ()
+function = do
+  first <- lower <|> symbolP <|> digit
+  rest <- identRest
+  current <- getState
+  let expr = first:rest
+      newDomain = parent current ++ [last (child current)]
+      newChildCount = init (child current) ++ [last (child current) + 1]
+  if (root current)
+  then putState $ TPS (Map.insert newDomain expr (domainMap current)) (parent current) newChildCount True
+  else putState $ TPS (Map.insert [] expr (domainMap current)) [] newChildCount True
+  spaces
+  return ()
+
+-- This occurence is called when there are arguments for this function
+function' :: TermParser ()
+function' = do
+  first <- lower <|> symbolP <|> digit
+  rest <- identRest
+  current <- getState
+  let expr = first:rest
+      newDomain = parent current ++ [last (child current)]
+      newChildCount = child current ++ [1]
+  if (root current)
+  then putState $ TPS (Map.insert newDomain expr (domainMap current)) newDomain newChildCount True
+  else putState $ TPS (Map.insert [] expr (domainMap current)) [] newChildCount True
+  spaces
+  return ()
+
+-- Parenthesis
 parenOpen, parenClose :: TermParser ()
 parenOpen  = char '(' >> spaces
 parenClose = char ')' >> spaces
-
-args :: TermParser [Term1]
-args = between parenOpen parenClose $ (term <* spaces) `sepBy` comma
-
-app :: TermParser Term1
-app = do c <- conId; a <- args; return $ Fun c a
-
-term :: TermParser Term1
-term = try app <|> con <|> var
-
-onlyTerm :: TermParser Term1
-onlyTerm = term <* eof
-
-from :: TermParser ()
-from = string ":-" >> spaces
-
-{-
-typesign :: TermParser ()
-typesign = string "::" >> spaces
--}
 
 period :: TermParser ()
 period = char '.' >> spaces
@@ -121,184 +89,290 @@ period = char '.' >> spaces
 comma :: TermParser ()
 comma = char ',' >> spaces
 
-body ::  TermParser [Term1]
-body =
-  from >> spaces >>
-  ((term <* spaces) `sepBy` comma) <* period
+-- any sequence of letters, valid symbols or digits
+identRest :: TermParser String
+identRest = many (letter <|> symbolP <|> digit)
 
-clause :: TermParser Clause1
+-- Valid symbols
+symbolP :: TermParser Char
+symbolP = oneOf "!#$%&|*+-/<=>?@^_~"
+
+-- Each Clause which has a head and a body is seperated by :-
+from :: TermParser ()
+from = string ":-" >> spaces
+
+-- Comments
+comment :: TermParser ()
+comment = char '%' >> void (anyChar `manyTill`
+                            try (void (newline >> spaces) <|> eof))
+
+--------------------------------------------------------------------------------
+-------------------------------Parsers for Terms--------------------------------
+--------------------------------------------------------------------------------
+
+-- Arguments are between open and closed parenthesis and each is a term seperated by commas
+args :: TermParser [TermTree]
+args = do
+  tt <- between parenOpen parenClose $ (term <* spaces) `sepBy` comma
+  current <- getState
+  let updChild = (init (child current))
+      newChild = init updChild ++ [last updChild +1]
+  putState $ TPS (domainMap current) (init2 (parent current)) newChild (root current)
+  return $ tt
+
+init2 [] = []
+init2 x = init x
+
+-- If the function has arguments
+app :: TermParser ()
+app = do
+  c <- function'
+  a <- args
+  return ()
+
+-- Term is either a function with arguments, a function without arguments or a variable
+term :: TermParser TermTree
+term = do
+  t <- try app <|> function <|> variable
+  st <- getState
+  let map = domainMap st
+      tt = makeTermTree map
+  return $ tt
+
+-- Resets the state between terms in a clause
+term' :: TermParser TermTree
+term' = do
+  b <- forgetVars
+  t <- term
+  return $ t
+
+-- Only parses terms into a list of TermTrees
+onlyTerms :: TermParser [TermTree]
+onlyTerms = do
+  ts <- many term
+  return ts
+
+stateTerms :: TermParser TermParserSt
+stateTerms = do
+  ts <- many term
+  st <- getState
+  return st
+
+--------------------------------------------------------------------------------
+----------------------Coinductive Term Parser-----------------------------------
+--------------------------------------------------------------------------------
+
+-- Each coinductive stae=tement starts with a coinductive
+coinductive :: TermParser ()
+coinductive = string "coinductive" >> spaces
+
+coTerm :: TermParser String
+coTerm = do
+  spaces >> coinductive
+  b <- between parenOpen parenClose $ identRest
+  endCoT
+  return $ b
+
+endCoT :: TermParser ()
+endCoT = string ":-." >> spaces
+
+onlyCoIn :: TermParser String
+onlyCoIn = coTerm <* eof
+--------------------------------------------------------------------------------
+---------------------------------Goal parsers-----------------------------------
+--------------------------------------------------------------------------------
+
+-- A goal starts with a :- and then is any number of terms seperated by commas
+goal :: TermParser [TermTree]
+goal = do
+  spaces >> from
+  b <- (term' <* spaces) `sepBy` comma
+  period
+  return $ b
+
+-- Only parses a goal
+onlyGoal :: TermParser [TermTree]
+onlyGoal = goal <* eof
+
+--------------------------------------------------------------------------------
+--------------------------------Clause parsers----------------------------------
+--------------------------------------------------------------------------------
+
+-- Body starts with seperater and any number of spaces then any number of terms seperated by commas until a period
+body ::  TermParser [TermTree]
+body = from >> spaces >> ((term' <* spaces) `sepBy` comma) <* period
+
+-- Clause is either a term with a body or a term on it's own
+clause :: TermParser (ClauseTree)
 clause = do
+  fv <- forgetVars
   h <- term
   spaces
   b <- try (period >> return []) <|> body
-  return $ h :- b
+  if b == []
+  then return $ makeClauseTree (h:[trueTT])
+  else return $ makeClauseTree (h:b)
 
-onlyClause :: TermParser Clause1
-onlyClause = clause <* eof
+-- Program is a list of clauses
+program :: TermParser [ClauseTree]
+program = spaces >> clause `sepEndBy` forgetVars
 
-program :: TermParser Program1
-program = spaces >> Pr <$> clause `sepEndBy` forgetVars
-
-onlyProgram :: TermParser Program1
+-- Parses the program until the end of file
+onlyProgram :: TermParser [ClauseTree]
 onlyProgram = program <* eof
 
-onlyProgramSt :: TermParser (Program1, TermParserSt)
+onlyProgramSt :: TermParser ([ClauseTree], TermParserSt)
 onlyProgramSt = do
   pr <- onlyProgram
   st <- getState
   return (pr, st)
 
-goal :: TermParser Goal1
-goal = do
-  spaces >> from
-  b <- (term <* spaces) `sepBy` comma
-  period
-  return $ Go b
-
-onlyGoal :: TermParser Goal1
-onlyGoal = goal <* eof
-
-onlyGoalSt :: TermParser (Goal1, TermParserSt)
-onlyGoalSt = do
-  g <- onlyGoal
-  st <- getState
-  return (g, st)
+--------------------------------------------------------------------------------
+--------------------------------General Parsing---------------------------------
+--------------------------------------------------------------------------------
 
 -- | The parsing engine with the user state of type 'TermParserSt', starting
 -- from the initial state.
-termParse :: (Stream s Identity t) => Parsec s TermParserSt a ->
-             SourceName -> s -> Either ParseError a
+termParse :: (Stream s Identity t) => Parsec s TermParserSt a -> SourceName -> s -> Either ParseError a
 termParse p = runP p tpsInit
 
 -- | The parsing engine with the user state of type 'TermParserSt', starting
 -- from a given state.
-termParseSt :: (Stream s Identity t) => Parsec s TermParserSt a ->
-               TermParserSt -> SourceName -> s -> Either ParseError a
+termParseSt :: (Stream s Identity t) => Parsec s TermParserSt a -> TermParserSt -> SourceName -> s -> Either ParseError a
 termParseSt = runP
 
-termParseStCases :: TermParser a -> TermParserSt -> SourceName -> String -> a
-termParseStCases pf tps lab txt =
-  case termParseSt pf tps lab txt of
-    Left e  -> error $ show e
-    Right r -> r
+--------------------------------------------------------------------------------
+-------------------------------Parsing from File--------------------------------
+--------------------------------------------------------------------------------
 
-termParseCases :: TermParser a -> SourceName -> String -> a
-termParseCases pf = termParseStCases pf tpsInit
-
-termParseFileStCases :: TermParser a -> TermParserSt -> SourceName ->
-                        String -> IO a
+-- Reads the file and attempts to parse
+termParseFileStCases :: TermParser a -> TermParserSt -> SourceName -> String -> IO a
 termParseFileStCases pf tps lab fileName = do
   s <- readFile fileName
   case termParseSt pf tps lab s of
     Left e  -> print e >> fail "parse error"
     Right r -> return r
 
+-- Provides parsing from a file for a range of parses
 termParseFileCases :: TermParser a -> SourceName -> String -> IO a
 termParseFileCases pf = termParseFileStCases pf tpsInit
+
+-- Parses a program from a file
+programFromFile :: String -> IO [ClauseTree]
+programFromFile = termParseFileCases onlyProgram "program"
+
+--------------------------------------------------------------------------------
+------------------------------Parsing from String-------------------------------
+--------------------------------------------------------------------------------
+
+-- Attempts to parse the string
+termParseStCases :: TermParser a -> TermParserSt -> SourceName -> String -> a
+termParseStCases pf tps lab txt =
+  case termParseSt pf tps lab txt of
+    Left e  -> error $ show e
+    Right r -> r
+
+-- Provides parsing from a String for a range of parses
+termParseCases :: TermParser a -> SourceName -> String -> a
+termParseCases pf = termParseStCases pf tpsInit
 
 fromStringSt :: TermParser a -> TermParserSt -> String -> a
 fromStringSt f tps = termParseStCases f tps "fromStringSt"
 
-programFromString :: String -> Program1
+-- Parses a program from a String
+programFromString :: String -> [ClauseTree]
 programFromString = termParseCases onlyProgram "program"
 
-programFromFile :: String -> IO Program1
-programFromFile = termParseFileCases onlyProgram "program"
 
-input :: TermParser Direction
-input = char '+' >> return Input
-
-output :: TermParser Direction
-output = char '-' >> return Output
-
-direction :: TermParser Direction
-direction = input <|> output
-
-eager :: TermParser Order
-eager = char '!' >> return Eager
-
-lazy :: TermParser Order
-lazy = char '?' >> return Lazy
-
-order :: TermParser Order
-order = eager <|> lazy
-
-mode :: TermParser Mode
-mode = do
-  d <- direction
-  o <- order
-  return $ M d o
-
-modes ::  TermParser [Mode]
-modes =
-  (between parenOpen parenClose $ (mode <* spaces) `sepBy` comma) <* try spaces
-
-modeAssoc :: TermParser ModeAssoc
-modeAssoc = do
-  ident <- conId
-  modes >>= return . ModeAssoc . HashMap.singleton ident . HashSet.singleton
-
-{-
-onlyModeAssoc :: TermParser ModeAssoc
-onlyModeAssoc = modeAssoc <* eof
--}
-
-onlyModeAssocs :: TermParser ModeAssoc
-onlyModeAssocs = many1 modeAssoc <* eof >>= return . unionModeAssoc
-
-modeAssocsFromString :: String -> ModeAssoc
-modeAssocsFromString = termParseCases onlyModeAssocs "modes"
-
-modeAssocsFromFile :: String -> IO ModeAssoc
-modeAssocsFromFile file = do
-  str <- readFile file
-  case termParse onlyModeAssocs "modes" str of
-    Left e  -> print e >> fail "parse error"
-    Right r -> return r
+--------------------------------------------------------------------------------
+------------------------Definition for items in a prog--------------------------
+--------------------------------------------------------------------------------
 
 -- | Top-level syntactic items present in input text.
-data Item = ItemClause    Clause1
-          | ItemGoal      Goal1
-          | ItemModeAssoc ModeAssoc
+data Item = ItemClause    ClauseTree
+          | ItemGoal      [TermTree]
+          -- | ItemModeAssoc ModeAssoc
+          | ItemCoTerm    String
           | ItemComment   ()            -- ^ forgets comments
-          deriving (Show, Eq)
-
-comment :: TermParser ()
-comment = char '%' >> void (anyChar `manyTill`
-                            try (void (newline >> spaces) <|> eof))
+          deriving (Eq, Show)
 
 -- | Unordered top-level syntactic items.
 items :: TermParser [Item]
 items =
   many1
   (
+    coTerm    `as` ItemCoTerm    <|>
     clause    `as` ItemClause    <|>
     goal      `as` ItemGoal      <|>
-    modeAssoc `as` ItemModeAssoc <|>
+    -- modeAssoc `as` ItemModeAssoc <|>
     comment   `as` ItemComment   <|>
     unexpected "Unexpected item in bagging area :)"
   )
   where
     f `as` g = try $ f >>= return . g
 
-itemsString :: String -> [Item]
-itemsString = termParseCases items "items"
-
-itemsFile :: String -> IO [Item]
-itemsFile = termParseFileCases items "items"
+--------------------------------------------------------------------------------
+-----------------------------Parsing a full program-----------------------------
+--------------------------------------------------------------------------------
 
 -- | Categorisation function that applies after items have been retrieved from a
 -- string or from a file.
-groupItems :: [Item] -> ([Clause1], [Goal1], [ModeAssoc])
+groupItems :: [Item] -> ([ClauseTree], [[TermTree]], [String])
 groupItems = foldr ins ([], [], [])
   where
-    ins (ItemClause    c) (cs, gs, ms) = (c:cs, gs, ms)
-    ins (ItemGoal      g) (cs, gs, ms) = (cs, g:gs, ms)
-    ins (ItemModeAssoc m) (cs, gs, ms) = (cs, gs, m:ms)
-    ins (ItemComment   _) old          = old
+    ins (ItemClause    c) (cs, gs, cts) = (c:cs, gs, cts)
+    ins (ItemGoal      g) (cs, gs, cts) = (cs, g:gs, cts)
+    --ins (ItemModeAssoc m) (cs, gs, ms) = (cs, gs, m:ms)
+    ins (ItemCoTerm   ct) (cs, gs, cts) = (cs, gs, ct:cts)
+    ins (ItemComment   _) old           = old
 
-parseItemsFile :: String -> IO ([Clause1], [Goal1], [ModeAssoc])
-parseItemsFile fn = itemsFile fn >>= return . groupItems
+-- Ensures all the Term trees share the same signature (ranked alphabet) as arity must be consistent
+unifySignature :: ([ClauseTree], [[TermTree]], [String]) -> ([ClauseTree], [[TermTree]], [String])
+unifySignature (cts, tts, cots) =
+  let ctRA = mergeCTRA cts
+      ttRA = mergeRankAlpha $ map (mergeTTRA) tts
+      newRA = mergeRankedAlpha ctRA ttRA
+  in  (map (flip replaceCLTreeRA newRA) cts, map (flip replaceTTreeRA newRA) tts, cots)
 
-parseItems :: String -> ([Clause1], [Goal1], [ModeAssoc])
-parseItems = groupItems . itemsString
+-- Parses a String into a list of Items
+itemsString :: String -> [Item]
+itemsString = termParseCases items "items"
+
+-- Parses a file into a list of Items
+itemsFile :: String -> IO [Item]
+itemsFile = termParseFileCases items "items"
+
+-- Parses a file into a tuple with a Program and a Goal
+parseItemsFile :: String -> IO ([ClauseTree], [[TermTree]], [String])
+parseItemsFile fn = itemsFile fn >>= return . unifySignature . groupItems
+
+-- Parses a string into a tuple with a Program and a Goal
+parseItems :: String -> ([ClauseTree], [[TermTree]], [String])
+parseItems = unifySignature . groupItems . itemsString
+
+--------------------------------------------------------------------------------
+-----------------------------------Testing--------------------------------------
+--------------------------------------------------------------------------------
+
+-- Tries to parse a string into a TermTree
+parseTerm :: String -> [TermTree]
+parseTerm t = either (\_ -> [empty]) id $ runP onlyTerms tpsInit "" t
+
+-- Tries to parse a string into a ClauseTree
+parseClause :: String -> ClauseTree
+parseClause c = either (\_ -> empty) id $ runP clause tpsInit "" c
+
+-- Tries to parse a string into a list of ClauseTrees
+parseProg :: String -> [ClauseTree]
+parseProg p =  either (\_ -> [empty]) id $ runP program tpsInit "" p
+
+drawItems :: ([ClauseTree], [[TermTree]], [String]) -> IO ()
+drawItems (prg, gs, cots) = do
+  putStrLn "Program : "
+  drawProgram prg
+  putStrLn "Goals : "
+  drawGoals gs
+  if cots == []
+  then return ()
+  else do putStrLn "Coinductive terms : "
+          putStrLn $ concat $ ((map (++ ",") (init cots)) ++ [(last cots)])

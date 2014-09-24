@@ -1,73 +1,84 @@
 module Main where
 
-import CoALP
-import CoALP.UI
+import CoALP.CTree
+import CoALP.TermTree
+import CoALP.ClauseTree
+import CoALP.Substitution
+import CoALP.Process
+import CoALP.Guards as OldGuards
+import CoALP.Guards2 as NewGuards
+import CoALP.CoInTree
+import CoALP.UI.Parser
+import CoALP.UI.Printer
+import CoALP.UI.Dot
 import CoALP.Interpreter.Options
 
 import System.IO
 import System.Exit
-import Data.Time
 import System.Locale
-import System.Process
-import Control.Exception
 import Control.Monad
-import Control.Applicative ( (<$>) )
-import Control.Arrow
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as HashSet
-import qualified Data.HashMap.Lazy as HashMap
+import Data.Time
+import Data.Maybe
+import qualified Data.List as List
+import           Data.Map (Map)
+import qualified Data.Map as Map
 
--- | Type of interpreter state.
-data IState = IState
-              {
-                iProg  :: Program1                -- ^ logic clauses
-              , iGoals :: [Goal1]                 -- ^ goals
-              , iModes :: ModeAssoc               -- ^ mode associaltions
-              , iNext  :: Int                     -- ^ the next variable
-              , iDer   :: [[HashSet (ONode Occ)]] -- ^ derivations, one per each
-                                                  -- goal
-              , iDir   :: [String]                -- ^ saved derivation
-                                                  -- directories, one per each
-                                                  -- derivation
-              }
 
--- | The initial state.
+
+data IState = IState { iProg :: Program
+                     , iGoals :: [Goal]
+                     , iCots :: [String]
+                     , iSols :: [[Int]]
+                     , iCurrent :: [Int]
+                     , iNext :: [[Int]]
+                     , iDTree :: DTree
+                     , iQueue :: [[Int]]
+                     , iTPS :: TermParserSt
+                     , iDir :: [String]}
+
 iState0 :: IState
-iState0 = IState (Pr []) [] (ModeAssoc HashMap.empty) 0 [] []
+iState0 = IState { iProg = []
+                 , iGoals = []
+                 , iCots = []
+                 , iSols = []
+                 , iCurrent = []
+                 , iNext = []
+                 , iDTree = empty
+                 , iQueue = []
+                 , iTPS = tpsInit
+                 , iDir = []}
+
+eachLine :: (Show a) => [a] -> String
+eachLine [] = ""
+eachLine (x:xs) = show x ++ "\n" ++ eachLine xs
 
 promptCtrlD :: String -> IO ()
-promptCtrlD thing =
-  putStrLn $ "Type in your " ++ thing ++
-             " and finish by typing Ctrl-D on a new line."
+promptCtrlD thing = putStrLn $ "Please enter " ++ thing ++ " and when done type Ctrl-D on a new line."
 
 actLoad :: IState -> IO IState
 actLoad st = do
   fileName <- readLine "Type the file name and then press Enter> "
-  (cs, gs, ms) <- parseItemsFile fileName
-  let pr = Pr cs
-      m = unionModeAssoc ms
-  if guarded pr
+  (prg, gs, cots) <- parseItemsFile fileName
+  let gcResults = OldGuards.guarded prg cots
+  if (fst gcResults)
     then
-    do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs ++ "\n" ++ show m
-       return $ st {iProg = pr, iGoals = gs, iModes = m, iNext = 0}
+    do drawItems (prg, gs, cots)
+       return $ iState0 {iProg = prg, iGoals = gs, iCots = cots}
     else
-    do putStrLn $ "The given program is unguarded\n"
+    do putStrLn $ eachLine $ snd gcResults
        return st
-    -- FIXME: 1) Retrieve the next variable from the parser state or disallow
-    -- separate changes to the program or goals. The latter is more preferable.
-    -- 2) Allow for multiple goals in the interpreter state.
+
 
 actLoadFromTerminal :: IState -> String -> IO IState
 actLoadFromTerminal st fileName = do
-  (cs, gs, ms) <- parseItemsFile fileName
-  let pr = Pr cs
-      m = unionModeAssoc ms
-  if guarded pr
+  (prg, gs, cots) <- parseItemsFile fileName
+  let gcResults = OldGuards.guarded prg cots
+  if (fst gcResults)
     then
-    do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs ++ "\n" ++ show m
-       return $ st {iProg = pr, iGoals = gs, iModes = m, iNext = 0}
+    do drawItems (prg, gs, cots)
+       return $ st {iProg = prg, iGoals = gs, iCots = cots}
     else
-    do putStrLn $ "The given program is unguarded\n"
+    do putStrLn $ eachLine $ snd gcResults
        return st
 
 actProgram :: IState -> IO IState
@@ -75,110 +86,109 @@ actProgram st = do
   let thing = "program"
   promptCtrlD thing
   str <- readUntilEOF "> "
-  let tps0 = tpsInit {tpsNext = iNext st}
+  --let tps0 = tpsInit {tpsNext = iNext st}
   (pr, tps) <- do
-    case termParseSt onlyProgramSt tps0 thing str of
-      Left e  -> print e >> return (iProg st, tps0)
+    case termParseSt onlyProgramSt (iTPS st) thing str of
+      Left e  -> print e >> return (iProg st, iTPS st)
       Right r -> return r
-  putStrLn $ "\n" ++ show pr
-  if guarded pr
+  drawProgram pr
+  let gcResults = OldGuards.guarded pr []
+  if (fst gcResults)
     then
-    do return $ st {iProg = pr, iNext = tpsNext tps}
+    do drawProgram pr
+       return $ st {iProg = pr, iTPS = tps}
     else
-    do putStrLn $ "\nThe given program is unguarded\n"
+    do putStrLn $ eachLine $ snd gcResults
        return st
 
-actGoal :: IState -> IO IState
-actGoal st = do
-  let thing = "goal"
-  promptCtrlD thing
-  str <- readUntilEOF "> "
-  let tps0 = tpsInit {tpsNext = iNext st}
-  (gs, tps) <- do
-    case termParseSt onlyGoalSt tps0 thing str of
-      Left e  -> print e >> return (iGoals st, tps0)
-      Right (g, tps) -> return ([g], tps)
-  putStrLn $ "\n" ++ show gs
-  return $ st {iGoals = gs, iNext = tpsNext tps}
+actAnswer :: IState -> IO IState
+actAnswer st@(IState pr g cots ss _ [] dtree q _ _) = do
+  let (nextSolD, (nextQ, nextDTree)) = findNextSolutionDS prioBreadthFirst (pr, g, cots) (q, dtree)
+      -- nextSol = map (getDSet nextDTree) nextSolD
+      uniqueSols@(sol:sols) = cleanUpSols nextDTree nextSolD -- List.nubBy eqCoIn nextSol
+      coTreeSol = coTree' $ getDSet nextDTree sol
+  if nextSolD == []
+    then
+    do putStrLn $ "No"
+       return st
+    else if nextQ == [] && sols == []
+           then
+           do putStrLn $ (displaySolution coTreeSol g pr " - Last Solution")
+              return $ st {iSols = ss ++ uniqueSols, iCurrent = sol, iNext = sols, iDTree = nextDTree, iQueue = nextQ }
+           else
+           do putStrLn $ (displaySolution coTreeSol g pr  " ; ")
+              return $ st {iSols = ss ++ uniqueSols, iCurrent = sol, iNext = sols, iDTree = nextDTree, iQueue = nextQ}
+actAnswer st@(IState pr g cots _ _ (sol:sols) dt q _ _) =
+  if q == [] && sols == []
+  then
+  do putStrLn $ (displaySolution coTreeSol g pr " - Last Solution")
+     return $ st {iCurrent = sol, iNext = sols}
+  else
+  do putStrLn $ (displaySolution coTreeSol g pr " ; ")
+     return $ st {iCurrent = sol, iNext = sols}
+  where coTreeSol = coTree' $ getDSet dt sol
 
-actModes :: IState -> IO IState
-actModes st = do
-  let thing = "modes"
-  promptCtrlD thing
-  str <- readUntilEOF "> "
-  ms <- do
-    case termParse onlyModeAssocs thing str of
-      Left e  -> print e >> return (iModes st)
-      Right r -> return r
-  putStrLn $ "\n" ++ show ms
-  return $ st {iModes = ms}
+cleanUpSols :: DTree -> [[Int]] -> [[Int]]
+cleanUpSols dt ds =
+  let dsets = map (getDSet dt) ds
+  in  map fst $ List.nubBy eqDSD (zip ds dsets)
 
-actDerivation :: IState -> IO IState
-actDerivation st@IState{iProg = p, iModes = m, iGoals = gs} = do
-  foldM (\st' g -> do
-            let d  = derivation p m g
-                ds = d : iDer st'
-            mapM_ wr (idx $ HashSet.toList <$> d)
-            return $ st' {iDer = ds}
-        ) st gs
-  where
-    -- FIXME: wr duplicates some part of the code from Dot.hs; reduce
-    -- duplication by introducing a function to cover the common functionality.
-    wr (ts, i) =
-      mapM_ (\(t, j) -> do
-                putStrLn $ "GENERATION " ++ show i ++ ", TREE " ++ show j
-                putStrLn $ show t)
-            (idx ts)
-    idx :: [a] -> [(a, Int)]
-    idx l = zip l [0..]
+eqDSD :: ([Int],DSet) -> ([Int],DSet) -> Bool
+eqDSD (_,a) (_,b) = eqDSet a b
+
+
+displaySolution :: Solution -> [Goal] -> Program -> String ->  String
+displaySolution ct@(CTree _ _ m) gs pr suf =
+  let sol = fromJust $ fromTT $ fromJust $ Map.lookup [1] m
+      g0 = head $ head gs
+      sub = fst $ ee $ termMatch g0 sol
+      str = "Yes, " ++ show0 sub ++ suf
+      coInRdt = Map.elems $ Map.filter (isCoInRdt) m
+  in  if  coInRdt /= []
+      then str ++ concat (map (showRdt pr) coInRdt)
+      else str
+
+displaySolutionFull :: Solution -> String
+displaySolutionFull ct@ (CTree _ _ m) =
+  let substitutions = map (show0) $ Map.elems $ Map.filter (isCoInXSub) m
+  in  "Yes, " ++ (List.intercalate ", " substitutions)
 
 actSave :: IState -> IO IState
-actSave st = do
+actSave st@IState {iDTree = dtree , iCurrent = curr} = do
+  fileName <- readLine "Type the file name and then press Enter> "
   t <- getCurrentTime
-  dirs <-
-    forM (iDer st) $ \d -> do
-      let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
-          dir = "CoALPi-" ++ fmt
-      save dir d
-      putStrLn $ "Saved in the directory " ++ dir
-      return dir
-  return $ st {iDir = dirs}
+  let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
+      dir = "CoALPi-" ++ show curr ++ fmt
+      chain = getDerivationChain dtree curr
+      trees = map (\(a,b) -> (fileName ++ "-" ++ show a ++ "-", coTree' b)) chain
+  saveDirTree dir trees
+  putStrLn $ "Saved in the directory " ++ dir
+  return $ st
 
-actSaveFinal :: IState -> IO IState
-actSaveFinal st = do
-  t <- getCurrentTime
-  dirs <-
-    forM (iDer st) $ \d -> do
-      let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
-          dir = "CoALPi-" ++ fmt
-      saveFinal dir d
-      putStrLn $ "Saved in the directory " ++ dir
-      return dir
-  return $ st {iDir = dirs}
+-- (Int,[([Int], CTree String)])
+showRdt :: Program -> CoInElem -> String
+showRdt pr (Rdt (cn, rs)) = "\nCoinductive guard on Clause " ++ show cn ++ ": " ++ clauseTreeToString (pr !! (cn - 1)) ++
+                            "\nCoinductive Guard : " ++ List.intercalate ", " (map (show0 . snd) rs)
+--composition :: [Subst] -> String -> String
+--composition [] s = s
+--composition (sub:subs) s
 
-actView :: IState -> IO IState
-actView st
-  | iDir st == [] = do
-    putStrLn "Nothing to view. Save a derivation first."
-    return st
-  | otherwise = do
-    let cmd = "sleep 1; eog " ++ concatMap (++ "/*.png ") (iDir st)
-    (void $ runCommand cmd) `catch` (print :: SomeException -> IO ())
-    return st
-
-actAnswer :: IState -> IO IState
-actAnswer st
-  | iDer st == [] = do
-    putStrLn "Execute a derivation first."
-    return st
-  | otherwise = do
-    putStrLn "Goals: "
-    print (iGoals st)
-    putStrLn "Answer:"
-    _ <-
-      forM (iDer st) $ \d -> do
-        print (rootTree $ head $ last $ HashSet.toList <$> d)
-    return st
+--  foldM (\st' g -> do
+--            let d  = derivation p m g
+--                ds = d : iDer st'
+--            mapM_ wr (idx $ HashSet.toList <$> d)
+--            return $ st' {iDer = ds}
+--        ) st gs
+--  where
+  -- FIXME: wr duplicates some part of the code from Dot.hs; reduce
+  -- duplication by introducing a function to cover the common functionality.
+--    wr (ts, i) =
+--      mapM_ (\(t, j) -> do
+--                putStrLn $ "GENERATION " ++ show i ++ ", TREE " ++ show j
+--                putStrLn $ show t)
+--            (idx ts)
+--    idx :: [a] -> [(a, Int)]
+--    idx l = zip l [0..]
 
 actExit :: IState -> IO IState
 actExit _ = putStrLn bye >> exitSuccess
@@ -186,19 +196,23 @@ actExit _ = putStrLn bye >> exitSuccess
 actHelp :: IState -> IO IState
 actHelp st = do
   putStrLn $ "Available commands:" ++
-             "\n\tload\n\tprogram\n\tgoal\n\tderivation\n\tsave\n\tview" ++
+             "\n\tload" ++
+             -- \n\tprogram\n\tgoal\n\tderivation
+             "\n\tsave" ++
+             -- \n\tview
              "\n\tanswer\n\texit\n\thelp"
   return st
+
 
 act :: String -> IState -> IO IState
 act ""           = return
 act "load"       = actLoad
-act "program"    = actProgram
-act "goal"       = actGoal
-act "modes"      = actModes
-act "derivation" = actDerivation
+--act "program"    = actProgram
+--act "goal"       = actGoal
+--act "modes"      = actModes
+--act "derivation" = actDerivation
 act "save"       = actSave
-act "view"       = actView
+--act "view"       = actView
 act "answer"     = actAnswer
 act "exit"       = actExit
 act "help"       = actHelp
@@ -240,25 +254,23 @@ bye =
   "                 ||----w |!\n" ++
   "                 ||     ||"
 
-nonInteractive :: CmdOptions -> IO IState
-nonInteractive op = do
-  inp <- readUntilEOF ""   -- the empty prompt
-  let (cs, gs, ms) = parseItems inp
-      pr           = Pr cs
-      m            = unionModeAssoc ms
-      st           = iState0 {iProg = pr, iGoals = gs, iModes = m}
-      (grdLevel, grdCont) = (abs &&& (>= 0)) $ optGuards op
-      grd = all (\f -> f pr) $
-            take grdLevel [guardedClauses, guardedMatches, guardedMgus]
-  when (grdLevel /= 0 && optVerbose op > 0) $
-    putStrLn $ "Level " ++ show grdLevel ++ " guardedness check " ++
-               if grd then "PASSED." else "FAILED."
-  if grdCont && grd
-    then
-      actDerivation st >>=
-        if optView op then (actView =<<) . actSave else return
-    else
-      return st
+--nonInteractive :: CmdOptions -> IO IState
+--nonInteractive op = do
+--  inp <- readUntilEOF ""   -- the empty prompt
+--  let (pr, gs, cots) = parseItems inp
+--      st           = iState0 {iProg = pr, iGoals = gs, iCots = cots}
+--      (grdLevel, grdCont) = (abs &&& (>= 0)) $ optGuards op
+--      grd = all (\f -> f pr) $
+--            take grdLevel [guardedClauses, guardedMatches, guardedMgus]
+--  when (grdLevel /= 0 && optVerbose op > 0) $
+--    putStrLn $ "Level " ++ show grdLevel ++ " guardedness check " ++
+--               if grd then "PASSED." else "FAILED."
+--  if grdCont && grd
+--    then
+--      actDerivation st >>=
+--        if optView op then (actView =<<) . actSave else return
+--    else
+--      return st
 
 goCoALP :: IState -> IO IState
 goCoALP st = do
@@ -282,33 +294,33 @@ interactiveLoad fileName = do
   st <- actLoadFromTerminal iState0 fileName
   goCoALP st
 
-interactiveLoadRun :: String -> IO IState
-interactiveLoadRun fileName = do
-  putStrLn welcome
-  st1 <- actLoadFromTerminal iState0 fileName
-  st2 <- actDerivation st1
-  st3 <- actAnswer st2
-  goCoALP st3
+--interactiveLoadRun :: String -> IO IState
+--interactiveLoadRun fileName = do
+--  putStrLn welcome
+--  st1 <- actLoadFromTerminal iState0 fileName
+--  st2 <- actDerivation st1
+--  st3 <- actAnswer st2
+--  goCoALP st3
 
-interactiveLoadRunViewAll :: String -> IO IState
-interactiveLoadRunViewAll fileName = do
-  putStrLn welcome
-  st1 <- actLoadFromTerminal iState0 fileName
-  st2 <- actDerivation st1
-  st3 <- actSave st2
-  st4 <- actView st3
-  st5 <- actAnswer st4
-  goCoALP st5
+--interactiveLoadRunViewAll :: String -> IO IState
+--interactiveLoadRunViewAll fileName = do
+--  putStrLn welcome
+--  st1 <- actLoadFromTerminal iState0 fileName
+--  st2 <- actDerivation st1
+--  st3 <- actSave st2
+--  st4 <- actView st3
+--  st5 <- actAnswer st4
+--  goCoALP st5
 
-interactiveLoadRunView :: String -> IO IState
-interactiveLoadRunView fileName = do
-  putStrLn welcome
-  st1 <- actLoadFromTerminal iState0 fileName
-  st2 <- actDerivation st1
-  st3 <- actSaveFinal st2
-  st4 <- actView st3
-  st5 <- actAnswer st4
-  goCoALP st5
+--interactiveLoadRunView :: String -> IO IState
+--interactiveLoadRunView fileName = do
+--  putStrLn welcome
+--  st1 <- actLoadFromTerminal iState0 fileName
+--  st2 <- actDerivation st1
+--  st3 <- actSaveFinal st2
+--  st4 <- actView st3
+--  st5 <- actAnswer st4
+--  goCoALP st5
 
 -- | Command-line option dispatcher.
 --
@@ -318,14 +330,14 @@ interactiveLoadRunView fileName = do
 -- reading and updating during the interactive session.
 goOptions :: CmdOptions -> IO IState
 goOptions op
-  | optStdin op = nonInteractive op
+--  | optStdin op = nonInteractive op
   | optLoad op == "" = interactive
   | not (optRun op) && not (optView op) = interactiveLoad $ optLoad op
-  | optRun op && not (optView op) = interactiveLoadRun $ optLoad op
-  | optRun op && optView op && (optGraphics op == "all") =
-    interactiveLoadRunViewAll $ optLoad op
-  | optRun op && optView op && (optGraphics op == "final") =
-      interactiveLoadRunView $ optLoad op
+--  | optRun op && not (optView op) = interactiveLoadRun $ optLoad op
+--  | optRun op && optView op && (optGraphics op == "all") =
+--    interactiveLoadRunViewAll $ optLoad op
+--  | optRun op && optView op && (optGraphics op == "final") =
+--      interactiveLoadRunView $ optLoad op
 goOptions _ = interactiveOptionNotValid
 
 main :: IO IState

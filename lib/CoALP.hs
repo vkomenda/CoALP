@@ -2,17 +2,21 @@
 
 module CoALP
   (
-    module CoALP.Term
-  , module CoALP.Clause
-  , module CoALP.Subst
-  , module CoALP.Tree
-  , module CoALP.Mode
-  , module CoALP.Guards
+    module CoALP.CTree
+  , module CoALP.ClauseTree
+  , module CoALP.CoInTree
+--  , module CoALP.Guards
+  , module CoALP.Guards2
+  , module CoALP.Process
+  , module CoALP.Substitution
+  , module CoALP.TermTree
   ) where
 
-import CoALP.Term
-import CoALP.Clause
-import CoALP.Subst
-import CoALP.Tree
-import CoALP.Mode
-import CoALP.Guards
+import CoALP.CTree
+import CoALP.ClauseTree
+import CoALP.CoInTree
+-- import CoALP.Guards
+import CoALP.Guards2
+import CoALP.Process
+import CoALP.Substitution
+import CoALP.TermTree

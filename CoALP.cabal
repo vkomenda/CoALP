@@ -5,7 +5,8 @@ name:          CoALP
 --             | | |
 version:       0.0.3
 license:       LGPLv3
-author:        Vladimir Komendantskiy <komendantsky@gmail.com>,
+author:        Andrew Pond,
+               Vladimir Komendantskiy <komendantsky@gmail.com>,
                Jónathan Heras <joheras@gmail.com>
 maintainer:    Vladimir Komendantskiy <komendantsky@gmail.com>
 category:      CoALP
