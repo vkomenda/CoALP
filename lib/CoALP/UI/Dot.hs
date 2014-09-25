@@ -133,7 +133,14 @@ saveDirTree :: (ShowNoQ a) => String -> [(String, CTree a)] -> IO ()
 saveDirTree dir ts =
   flip catch (print :: IOError -> IO ()) $ do
     createDirectory dir
-    mapM_ (\(a,b) -> saveFile (dir ++ a) b) ts
+    mapM_ (\(a,b) -> saveFile (dir ++ "/" ++ a) b) ts
+
+-- Saves a List of tree to a driectory with the prefix given
+saveDirMap :: (ShowNoQ a) => String -> [(String, Map [Int] a )] -> IO ()
+saveDirMap dir ms =
+  flip catch (print :: IOError -> IO ()) $ do
+    createDirectory dir
+    mapM_ (\(a,b) -> saveMap (dir ++ "/" ++ a) b) ms
 
 -- Saves a list of tress to the directory named and draws them as pngs
 saveDir :: (ShowNoQ a) => String -> [CTree a] -> IO ()

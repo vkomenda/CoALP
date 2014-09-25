@@ -158,10 +158,11 @@ actSave st@IState {iDTree = dtree , iCurrent = curr} = do
   fileName <- readLine "Type the file name and then press Enter> "
   t <- getCurrentTime
   let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
-      dir = "CoALPi-" ++ show curr ++ fmt
+      dir = "CoALPi-" ++ fmt 
       chain = getDerivationChain dtree curr
-      trees = map (\(a,b) -> (fileName ++ "-" ++ show a ++ "-", coTree' b)) chain
-  saveDirTree dir trees
+      trees = map (\(a,b) -> (fileName ++ "-" ++ show a, coTree' b)) $ zip [1..] $ reverse $ map snd chain
+      reducedtrees = map (\(a,b) -> (a, reduceMap b)) trees
+  saveDirMap dir reducedtrees
   putStrLn $ "Saved in the directory " ++ dir
   return $ st
 
