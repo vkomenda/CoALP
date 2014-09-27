@@ -1,16 +1,7 @@
 module Main where
 
-import CoALP.CTree
-import CoALP.TermTree
-import CoALP.ClauseTree
-import CoALP.Substitution
-import CoALP.Process
-import CoALP.Guards as OldGuards
-import CoALP.Guards2 as NewGuards
-import CoALP.CoInTree
-import CoALP.UI.Parser
-import CoALP.UI.Printer
-import CoALP.UI.Dot
+import CoALP
+import CoALP.UI
 import CoALP.Interpreter.Options
 
 import System.IO
@@ -59,7 +50,7 @@ actLoad :: IState -> IO IState
 actLoad st = do
   fileName <- readLine "Type the file name and then press Enter> "
   (prg, gs, cots) <- parseItemsFile fileName
-  let gcResults = OldGuards.guarded prg cots
+  let gcResults = guarded prg cots
   if (fst gcResults)
     then
     do drawItems (prg, gs, cots)
@@ -72,7 +63,7 @@ actLoad st = do
 actLoadFromTerminal :: IState -> String -> IO IState
 actLoadFromTerminal st fileName = do
   (prg, gs, cots) <- parseItemsFile fileName
-  let gcResults = OldGuards.guarded prg cots
+  let gcResults = guarded prg cots
   if (fst gcResults)
     then
     do drawItems (prg, gs, cots)
@@ -92,7 +83,7 @@ actProgram st = do
       Left e  -> print e >> return (iProg st, iTPS st)
       Right r -> return r
   drawProgram pr
-  let gcResults = OldGuards.guarded pr []
+  let gcResults = guarded pr []
   if (fst gcResults)
     then
     do drawProgram pr
@@ -158,7 +149,7 @@ actSave st@IState {iDTree = dtree , iCurrent = curr} = do
   fileName <- readLine "Type the file name and then press Enter> "
   t <- getCurrentTime
   let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
-      dir = "CoALPi-" ++ fmt 
+      dir = "CoALPi-" ++ fmt
       chain = getDerivationChain dtree curr
       trees = map (\(a,b) -> (fileName ++ "-" ++ show a, coTree' b)) $ zip [1..] $ reverse $ map snd chain
       reducedtrees = map (\(a,b) -> (a, reduceMap b)) trees
