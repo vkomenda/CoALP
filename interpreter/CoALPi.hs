@@ -4,17 +4,14 @@ import CoALP
 import CoALP.UI
 import CoALP.Interpreter.Options
 
+import Control.Arrow ((***))
 import System.IO
 import System.Exit
 import System.Locale
-import Control.Monad
 import Data.Time
 import Data.Maybe
 import qualified Data.List as List
-import           Data.Map (Map)
 import qualified Data.Map as Map
-
-
 
 data IState = IState { iProg :: Program
                      , iGoals :: [Goal]
@@ -109,7 +106,7 @@ actAnswer st@(IState pr g cots ss _ [] dtree q _ _) = do
            else
            do putStrLn $ (displaySolution coTreeSol g pr  " ; ")
               return $ st {iSols = ss ++ uniqueSols, iCurrent = sol, iNext = sols, iDTree = nextDTree, iQueue = nextQ}
-actAnswer st@(IState pr g cots _ _ (sol:sols) dt q _ _) =
+actAnswer st@(IState pr g _ _ _ (sol:sols) dt q _ _) =
   if q == [] && sols == []
   then
   do putStrLn $ (displaySolution coTreeSol g pr " - Last Solution")
@@ -129,7 +126,7 @@ eqDSD (_,a) (_,b) = eqDSet a b
 
 
 displaySolution :: Solution -> [Goal] -> Program -> String ->  String
-displaySolution ct@(CTree _ _ m) gs pr suf =
+displaySolution (CTree _ _ m) gs pr suf =
   let sol = fromJust $ fromTT $ fromJust $ Map.lookup [1] m
       g0 = head $ head gs
       sub = fst $ ee $ termMatch g0 sol
@@ -140,7 +137,7 @@ displaySolution ct@(CTree _ _ m) gs pr suf =
       else str
 
 displaySolutionFull :: Solution -> String
-displaySolutionFull ct@ (CTree _ _ m) =
+displaySolutionFull (CTree _ _ m) =
   let substitutions = map (show0) $ Map.elems $ Map.filter (isCoInXSub) m
   in  "Yes, " ++ (List.intercalate ", " substitutions)
 
@@ -151,8 +148,10 @@ actSave st@IState {iDTree = dtree , iCurrent = curr} = do
   let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
       dir = "CoALPi-" ++ fmt
       chain = getDerivationChain dtree curr
-      trees = map (\(a,b) -> (fileName ++ "-" ++ show a, coTree' b)) $ zip [1..] $ reverse $ map snd chain
-      reducedtrees = map (\(a,b) -> (a, reduceMap b)) trees
+      prfx = fileName ++ "-"
+      trees = map (((++) prfx) . show *** coTree') $
+              zip [(1 :: Int) ..] $ reverse $ map snd chain
+      reducedtrees = map (id *** reduceMap) trees
   saveDirMap dir reducedtrees
   putStrLn $ "Saved in the directory " ++ dir
   return $ st
