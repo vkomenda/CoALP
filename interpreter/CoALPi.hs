@@ -158,8 +158,12 @@ actSave st@IState {iDTree = dtree , iCurrent = curr} = do
 
 -- (Int,[([Int], CTree String)])
 showRdt :: Program -> CoInElem -> String
-showRdt pr (Rdt (cn, rs)) = "\nCoinductive guard on Clause " ++ show cn ++ ": " ++ clauseTreeToString (pr !! (cn - 1)) ++
-                            "\nCoinductive Guard : " ++ List.intercalate ", " (map (show0 . snd) rs)
+showRdt pr (Rdt (cn, rs)) =
+  "\nCoinductive guard on Clause " ++ show cn ++ ": " ++
+  clauseTreeToString (pr !! (cn - 1)) ++
+  "\nCoinductive Guard : " ++ List.intercalate ", " (map (show0 . snd) rs)
+showRdt _ _ = undefined    -- FIXME
+
 --composition :: [Subst] -> String -> String
 --composition [] s = s
 --composition (sub:subs) s
@@ -193,7 +197,6 @@ actHelp st = do
              -- \n\tview
              "\n\tanswer\n\texit\n\thelp"
   return st
-
 
 act :: String -> IState -> IO IState
 act ""           = return
@@ -245,23 +248,19 @@ bye =
   "                 ||----w |!\n" ++
   "                 ||     ||"
 
---nonInteractive :: CmdOptions -> IO IState
---nonInteractive op = do
---  inp <- readUntilEOF ""   -- the empty prompt
---  let (pr, gs, cots) = parseItems inp
---      st           = iState0 {iProg = pr, iGoals = gs, iCots = cots}
---      (grdLevel, grdCont) = (abs &&& (>= 0)) $ optGuards op
---      grd = all (\f -> f pr) $
---            take grdLevel [guardedClauses, guardedMatches, guardedMgus]
---  when (grdLevel /= 0 && optVerbose op > 0) $
---    putStrLn $ "Level " ++ show grdLevel ++ " guardedness check " ++
---               if grd then "PASSED." else "FAILED."
---  if grdCont && grd
---    then
---      actDerivation st >>=
---        if optView op then (actView =<<) . actSave else return
---    else
---      return st
+nonInteractive :: CmdOptions -> IO IState
+nonInteractive _ = do
+  inp <- readUntilEOF ""   -- the empty prompt
+  let (pr, gs, cots) = parseItems inp
+      gcResults = guarded pr cots
+      st = iState0 {iProg = pr, iGoals = gs, iCots = cots}
+  if (fst gcResults)
+    then
+    do drawItems (pr, gs, cots)
+       actAnswer st
+    else
+    do putStrLn $ eachLine $ snd gcResults
+       return st
 
 goCoALP :: IState -> IO IState
 goCoALP st = do
@@ -321,14 +320,16 @@ interactiveLoad fileName = do
 -- reading and updating during the interactive session.
 goOptions :: CmdOptions -> IO IState
 goOptions op
---  | optStdin op = nonInteractive op
+  | optStdin op = nonInteractive op
   | optLoad op == "" = interactive
   | not (optRun op) && not (optView op) = interactiveLoad $ optLoad op
---  | optRun op && not (optView op) = interactiveLoadRun $ optLoad op
---  | optRun op && optView op && (optGraphics op == "all") =
---    interactiveLoadRunViewAll $ optLoad op
---  | optRun op && optView op && (optGraphics op == "final") =
---      interactiveLoadRunView $ optLoad op
+{-
+  | optRun op && not (optView op) = interactiveLoadRun $ optLoad op
+  | optRun op && optView op && (optGraphics op == "all") =
+    interactiveLoadRunViewAll $ optLoad op
+  | optRun op && optView op && (optGraphics op == "final") =
+      interactiveLoadRunView $ optLoad op
+-}
 goOptions _ = interactiveOptionNotValid
 
 main :: IO IState

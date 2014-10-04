@@ -16,8 +16,8 @@ data CmdOptions = CmdOptions
   , optRun      :: Bool
   , optView     :: Bool
   , optGraphics :: String
-  , optGuards   :: Int
-  , optVerbose  :: Int
+--  , optGuards   :: Int
+--  , optVerbose  :: Int
   }
   deriving Show
 
@@ -46,6 +46,7 @@ parseCmdOption = CmdOptions
         <> value "final"
         <> help ("Which of the results to save as pictures: either \"all\" " ++
                  "or \"final\" (default). Requires Graphviz.") )
+{-
     <*> option
          ( long "guards"
         <> short 'a'
@@ -58,6 +59,7 @@ parseCmdOption = CmdOptions
         <> short 'v'
         <> value 1
         <> help "The verbosity level." )
+-}
 
 opts :: ParserInfo CmdOptions
 opts = info (parseCmdOption <**> helper)
