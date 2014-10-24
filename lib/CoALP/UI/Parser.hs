@@ -3,6 +3,7 @@
 module CoALP.UI.Parser where
 
 import Text.Parsec
+import Text.Parsec.Prim
 import Data.Functor.Identity
 import           Data.Map (Map)
 import qualified Data.Map as Map
