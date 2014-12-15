@@ -4,7 +4,7 @@
 
 module CoALP.Term where
 
-import Prelude hiding (foldr, foldl)
+import Prelude hiding (foldr, foldl, any)
 
 import Control.DeepSeq
 --import Data.Bits
@@ -112,3 +112,23 @@ labelSubterms = go [] where
   go cs (Fun f ts) = Fun (f, cs) $
                      (\(t, c) -> go (cs ++ [c]) t) <$>
                      zip ts (enumFrom (toEnum 0))
+
+-- | Term reduct:
+--
+-- > t `reduct` s
+--
+-- is @True@ if and only if @t@ is a reduct of @s@.
+reduct :: Eq a => Term a b -> Term a b -> Bool
+reduct (Var _)    (Fun _ (_:_)) = True
+reduct (Fun _ []) (Fun _ (_:_)) = True
+reduct (Fun f ts) (Fun g us) | f == g =
+  any (uncurry reduct) (zip ts us)
+reduct _ _ = False
+
+recReduct :: Eq a => Term a b -> Term a b -> Bool
+recReduct (Var i) (Fun _ us@(_:_)) =
+  any (== True) (fmap (== i) us)
+recReduct (Fun _ []) (Fun _ us@(_:_)) = True
+recReduct (Fun f ts) (Fun g us) | f == g =
+  any (uncurry recReduct) (zip ts us)
+recReduct _ _ = False
