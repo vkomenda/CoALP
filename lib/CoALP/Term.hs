@@ -125,10 +125,15 @@ reduct (Fun f ts) (Fun g us) | f == g =
   any (uncurry reduct) (zip ts us)
 reduct _ _ = False
 
-recReduct :: Eq a => Term a b -> Term a b -> Bool
-recReduct (Var i) (Fun _ us@(_:_)) =
-  any (== True) (fmap (== i) us)
-recReduct (Fun _ []) (Fun _ us@(_:_)) = True
+-- | Recursive term reduct. For any term @t@, @recReduct t@ is a subset of
+-- @reduct t@.
+recReduct :: (Eq a, Eq b) => Term a b -> Term a b -> Bool
+recReduct (Var i)    u@(Fun _ (_:_)) = any (== i) u
+recReduct (Fun c []) u@(Fun _ (_:_)) =
+  foldrf (\ab -> (&&) (samecon ab)) False u
+  where
+    samecon _        = False
+    samecon (Left d) = d == c
 recReduct (Fun f ts) (Fun g us) | f == g =
   any (uncurry recReduct) (zip ts us)
 recReduct _ _ = False
