@@ -104,7 +104,7 @@ guardedFun :: (Eq a, Eq b, Hashable a, Hashable b, Num b, Ord b,
               BranchHistory a b -> Program a b -> Term a b -> Bool
 guardedFun f hist pr@(Pr cls) h@(Fun c ts) =
   all (\(i, s) ->
-        (all (guardedClause . flip (:-) [h] . Fun c) . HashSet.toList <$> mvis i)
+        (all (recReduct h . Fun c) . HashSet.toList <$> mvis i)
           /= Just False &&
         all (f (hist_h i) (liftPr (hist_h i) pr) . (>>= subst s)) (clBody (cls!!i))
       ) $ h `matchHeads` cls
@@ -146,7 +146,7 @@ mguHeads :: (Eq a, Eq b, Hashable a, Hashable b, Injectable b b) =>
             Term a b -> [Clause a b] -> [(Int, Subst (Term a) b b)]
 mguHeads = onHeads mguMaybe
 
--- | Map an computation on a given term over the heads of a given list of
+-- | Map a computation on a given term over the heads of a given list of
 -- clauses.
 onHeads :: (Eq a, Eq b, Hashable a, Hashable b, Injectable b b) =>
            (Term a b -> Term a b -> Maybe (Subst (Term a) b b)) ->
