@@ -162,6 +162,13 @@ maxVarHistory =
    \t n -> n `max` foldr (max . Just) Nothing (HashSet.toList $ varsTerm t)
   ) Nothing
 
+-- | A common underlying type of 'clause projection' and 'guarding context'.
+data GuardCtx a b = GuardCtx
+                    {
+                      gcClauseIdx :: Int,
+                      gcGuards    :: HashSet (Pos, Term a b)
+                    }
+
 type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
 
 maxVarPosHistory :: (Hashable b, Ord b, Num b) => BranchPosHistory a b -> Maybe b
