@@ -3,10 +3,10 @@
 
 module CoALP.Guards
        (
-         guarded
-       , guardedClauses
+         guardedClauses
        , guardedMatches
-       , guardedMgus
+--       , guardedMgus
+--       , guarded
        )
        where
 
@@ -169,6 +169,44 @@ data GuardCtx a b = GuardCtx
                       gcGuards    :: HashSet (Pos, Term a b)
                     }
 
+data ANode a b = ANode a (IntMap (ONode a b))
+               deriving (Eq)
+
+data ONode a b = ONode [ANode a b] | ONodeVar b
+               deriving (Eq)
+
+type TreeVar = Int
+
+-- | Rewriting tree: a maximal and-or tree constructed by repeated matching of a
+-- given clause against clauses in a given program.
+rewritingTree :: Program1 -> Clause1 -> ONode Term1 TreeVar
+rewritingTree pr cl = fst $ rewritingTreeV pr cl 0
+
+-- | Rewriting tree built using tree variables starting from @vin@. The result
+-- of the function consists of the rewriting tree and the next free variable.
+rewritingTreeV :: Program1 -> Clause1 -> TreeVar ->
+                 (ONode Term1 TreeVar, TreeVar)
+rewritingTreeV pr cl vin = (ONode aNodes, vout)
+  where
+    (aNodes, vout) =
+            foldr (\t (ns, v) ->
+                    ((\ons -> ANode t ons : ns) *** id) (oNodes t v))
+            ([], vin)
+            (clBody cl)
+    oNodes t v0 = (IntMap.fromAscList *** id) (oNodesList t v0)
+    oNodesList :: Term1 -> TreeVar -> ([(Int, ONode Term1 TreeVar)], TreeVar)
+    oNodesList t v0 =
+      foldr (\i (ns, v) ->
+               let ci = (unPr pr)!!i in
+               case clHead ci `matchMaybe` t of
+                 Just s  ->
+                   ((\n -> (i, n) : ns) *** id)
+                   (rewritingTreeV pr (clSubst s ci) v)
+                 Nothing -> ((i, ONodeVar v) : ns, v + 1)
+            ) ([], v0) idxs
+    idxs = [0..length (unPr pr) - 1]
+
+{-
 type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
 
 maxVarPosHistory :: (Hashable b, Ord b, Num b) => BranchPosHistory a b -> Maybe b
@@ -236,3 +274,4 @@ guarded :: (Eq a, Eq b, Hashable a, Hashable b, Ord b, Num b,
             Injectable b b) =>
            Program a b -> Bool
 guarded pr = guardedClauses pr && guardedMatches pr && guardedMgus pr
+-}
