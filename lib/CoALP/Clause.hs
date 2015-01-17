@@ -1,6 +1,7 @@
 module CoALP.Clause where
 
 import CoALP.Term as Term
+import CoALP.Subst as Subst
 
 import Control.DeepSeq
 import Data.Foldable (foldMap)
@@ -22,6 +23,9 @@ clHead (h :- _) = h
 
 clBody :: Clause a b -> [Term a b]
 clBody (_ :- b) = b
+
+clSubst :: Subst1 -> Clause1 -> Clause1
+clSubst s (h :- b) = (h >>= subst s) :- map (>>= subst s) b
 
 newtype Program a b = Pr {unPr :: [Clause a b]}
 type Program1 = Program String Int
