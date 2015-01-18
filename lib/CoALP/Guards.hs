@@ -213,12 +213,13 @@ resolventTreeO :: Program1 -> Term1 -> Int -> TreeVar -> TreeVar ->
                   ONode Term1 TreeVar -> ONode Term1 TreeVar
 resolventTreeO pr t i vin vt (ONode ns) =
   ONode $ map (resolventTreeA pr vin vt) ns
-resolventTreeO pr t i vin vt (ONodeVar v) | v == vt =
-  let ci = (unPr pr)!!i in
-  case clHead ci `mguMaybe` t of
-    Just s  -> fst $ rewritingTreeV pr (clSubst s ci) vin
-    Nothing -> ONodeVar v
-
+resolventTreeO pr t i vin vt n@(ONodeVar v)
+  | v == vt =
+    let ci = (unPr pr)!!i in
+    case clHead ci `mguMaybe` t of
+      Just s  -> fst $ rewritingTreeV pr (clSubst s ci) vin
+      Nothing -> n
+  | otherwise = n
 {-
 type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
 
