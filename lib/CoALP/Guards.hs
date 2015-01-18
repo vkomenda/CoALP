@@ -189,22 +189,35 @@ rewritingTreeV :: Program1 -> Clause1 -> TreeVar ->
 rewritingTreeV pr cl vin = (ONode aNodes, vout)
   where
     (aNodes, vout) =
-            foldr (\t (ns, v) ->
-                    ((\ons -> ANode t ons : ns) *** id) (oNodes t v))
+      foldr (\t (ns, v) -> ((\ons -> ANode t ons : ns) *** id) $ oNodes t v)
             ([], vin)
             (clBody cl)
-    oNodes t v0 = (IntMap.fromAscList *** id) (oNodesList t v0)
+    oNodes t v0 = (IntMap.fromAscList *** id) $ oNodesList t v0
     oNodesList :: Term1 -> TreeVar -> ([(Int, ONode Term1 TreeVar)], TreeVar)
     oNodesList t v0 =
       foldr (\i (ns, v) ->
                let ci = (unPr pr)!!i in
                case clHead ci `matchMaybe` t of
-                 Just s  ->
-                   ((\n -> (i, n) : ns) *** id)
-                   (rewritingTreeV pr (clSubst s ci) v)
+                 Just s  -> ((\n -> (i, n) : ns) *** id) $
+                            rewritingTreeV pr (clSubst s ci) v
                  Nothing -> ((i, ONodeVar v) : ns, v + 1)
             ) ([], v0) idxs
     idxs = [0..length (unPr pr) - 1]
+
+resolventTreeA :: Program1 -> TreeVar -> TreeVar ->
+                  ANode Term1 TreeVar -> ANode Term1 TreeVar
+resolventTreeA pr vin vt (ANode a ns) =
+  ANode a $ IntMap.mapWithKey (\i -> resolventTreeO pr a i vin vt) ns
+
+resolventTreeO :: Program1 -> Term1 -> Int -> TreeVar -> TreeVar ->
+                  ONode Term1 TreeVar -> ONode Term1 TreeVar
+resolventTreeO pr t i vin vt (ONode ns) =
+  ONode $ map (resolventTreeA pr vin vt) ns
+resolventTreeO pr t i vin vt (ONodeVar v) | v == vt =
+  let ci = (unPr pr)!!i in
+  case clHead ci `mguMaybe` t of
+    Just s  -> fst $ rewritingTreeV pr (clSubst s ci) vin
+    Nothing -> ONodeVar v
 
 {-
 type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
