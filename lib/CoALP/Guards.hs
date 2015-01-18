@@ -204,6 +204,8 @@ rewritingTreeV pr cl vin = (ONode aNodes, vout)
             ) ([], v0) idxs
     idxs = [0..length (unPr pr) - 1]
 
+-- | Resolvent tree of a given tree against a program. Mutually recursive
+-- definition.
 resolventTreeA :: Program1 -> TreeVar -> TreeVar ->
                   ANode Term1 TreeVar -> ANode Term1 TreeVar
 resolventTreeA pr vin vt (ANode a ns) =
@@ -220,6 +222,27 @@ resolventTreeO pr t i vin vt n@(ONodeVar v)
       Just s  -> fst $ rewritingTreeV pr (clSubst s ci) vin
       Nothing -> n
   | otherwise = n
+
+transitionTreeA :: Program1 -> TreeVar -> TreeVar ->
+                   Subst1 -> ONode Term1 TreeVar ->
+                   ANode Term1 TreeVar -> ANode Term1 TreeVar
+transitionTreeA pr vin vt s tt (ANode a ns) =
+  ANode a_s (IntMap.mapWithKey (\i -> transitionTreeO pr a_s i vin vt s tt) ns)
+  where
+    a_s = a >>= subst s
+
+-- FIXME: compute both the tree and the substitution in resolventTreeO and give
+-- those as arguments here.
+transitionTreeO :: Program1 -> Term1 -> Int -> TreeVar -> TreeVar ->
+                   Subst1 -> ONode Term1 TreeVar ->
+                   ONode Term1 TreeVar -> ONode Term1 TreeVar
+transitionTreeO pr t i vin vt s tt (ONode ns) =
+  ONode $ map (transitionTreeA pr vin vt s tt) ns
+transitionTreeO pr t i vin vt s tt n@(ONodeVar v)
+  | v == vt   = tt
+                -- FIXME: correct the input fresh tree variable
+  | otherwise = resolventTreeO pr t i vin vt n
+
 {-
 type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
 
