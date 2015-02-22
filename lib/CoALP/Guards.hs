@@ -175,7 +175,48 @@ data ANode a b = ANode a (IntMap (ONode a b))
 data ONode a b = ONode [ANode a b] | ONodeVar b
                deriving (Eq)
 
+termOfANode (ANode t _) = t
+clausesOfANode (ANode _ ns) = ns
+
+-- | The type of complex link from an or-node to another or-node passing through
+-- an and-node in a rewrite tree.
+data TreeLink = TreeLink
+                {
+                  aNodeIdx :: Int,
+                  oNodeIdx :: Int
+                }
+                deriving (Eq, Ord)
+
+-- | Path in a rewrite tree from an or-node to an ancestor or-node.
+type TreePath = [TreeLink]
+
 type TreeVar = Int
+
+-- | A mapping of tree variables to paths to locations of the variables in the
+-- tree.
+treeVars :: ONode a TreeVar -> TreePath -> IntMap TreePath
+treeVars (ONodeVar v) p = IntMap.singleton v p
+treeVars (ONode ans) p = IntMap.unions tvs
+  where
+    tvs = (\(i, (ANode _ ns)) -> findInSubtrees i ns) <$> zip [0..] ans
+    findInSubtrees i ns =
+      IntMap.foldrWithKey
+        (\j n -> IntMap.union $ treeVars n $ p ++ [TreeLink i j])
+        IntMap.empty ns
+
+-- | The term in the and-node determined by the given path in the given
+-- tree. There is no correctness check for paths.
+termAt :: ONode Term1 TreeVar -> TreePath -> Term1
+termAt (ONode ans) ((TreeLink a _) : []) = termOfANode $ ans!!a
+termAt (ONode ans) ((TreeLink a o) : p)  =
+  termAt ((IntMap.!) (clausesOfANode (ans!!a)) o) p
+termAt _ [] = error "tree path should be non-empty"
+
+-- | Mgu of a term at the given path with the head of a clause whose index is at
+-- the end of the path.
+mguMaybeAt :: Program1 -> ONode Term1 TreeVar -> TreePath -> Maybe Subst1
+mguMaybeAt _ _ [] = error "tree path should be non-empty"
+mguMaybeAt pr t p = mguMaybe (termAt t p) $ clHead $ (unPr pr)!!(oNodeIdx (last p))
 
 -- | Rewriting tree: a maximal and-or tree constructed by repeated matching of a
 -- given clause against clauses in a given program.
