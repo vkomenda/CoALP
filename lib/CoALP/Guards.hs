@@ -10,6 +10,8 @@ module CoALP.Guards
        )
        where
 
+import Prelude hiding (foldr)
+
 import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
@@ -17,10 +19,12 @@ import CoALP.Subst
 import Control.Arrow
 import           Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import           Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
+import Data.Foldable (Foldable(..))
 import Data.Hashable
 import Data.Maybe
 import Data.Function
@@ -169,14 +173,22 @@ data GuardCtx a b = GuardCtx
                       gcGuards    :: HashSet (Pos, Term a b)
                     }
 
-data ANode a b = ANode a (IntMap (ONode a b))
-               deriving (Eq)
+data ANode a b = ANode
+                 {
+                   aNodeTerm :: a,
+                   aNodeClauses :: IntMap (ONode a b)
+                 }
+                 deriving (Eq)
 
-data ONode a b = ONode [ANode a b] | ONodeVar b
-               deriving (Eq)
-
-termOfANode (ANode t _) = t
-clausesOfANode (ANode _ ns) = ns
+data ONode a b = ONode
+                 {
+                   oNode :: [ANode a b]
+                 } |
+                 ONodeVar
+                 {
+                   oNodeVar :: b
+                 }
+                 deriving (Eq)
 
 -- | The type of complex link from an or-node to another or-node passing through
 -- an and-node in a rewrite tree.
@@ -185,7 +197,7 @@ data TreeLink = TreeLink
                   aNodeIdx :: Int,
                   oNodeIdx :: Int
                 }
-                deriving (Eq, Ord)
+                deriving (Show, Eq, Ord)
 
 -- | Path in a rewrite tree from an or-node to an ancestor or-node.
 type TreePath = [TreeLink]
@@ -194,29 +206,63 @@ type TreeVar = Int
 
 -- | A mapping of tree variables to paths to locations of the variables in the
 -- tree.
-treeVars :: ONode a TreeVar -> TreePath -> IntMap TreePath
-treeVars (ONodeVar v) p = IntMap.singleton v p
-treeVars (ONode ans) p = IntMap.unions tvs
+treeVars :: TreePath -> ONode a TreeVar -> IntMap TreePath
+treeVars p (ONodeVar v) = IntMap.singleton v p
+treeVars p (ONode ans)  = IntMap.unions tvs
   where
     tvs = (\(i, (ANode _ ns)) -> findInSubtrees i ns) <$> zip [0..] ans
     findInSubtrees i ns =
       IntMap.foldrWithKey
-        (\j n -> IntMap.union $ treeVars n $ p ++ [TreeLink i j])
+        (\j n -> IntMap.union $ treeVars (p ++ [TreeLink i j]) n)
         IntMap.empty ns
+
+pathOfTreeVar :: TreeVar -> ONode a TreeVar -> Maybe TreePath
+pathOfTreeVar v = IntMap.lookup v . treeVars []
 
 -- | The term in the and-node determined by the given path in the given
 -- tree. There is no correctness check for paths.
-termAt :: ONode Term1 TreeVar -> TreePath -> Term1
-termAt (ONode ans) ((TreeLink a _) : []) = termOfANode $ ans!!a
-termAt (ONode ans) ((TreeLink a o) : p)  =
-  termAt ((IntMap.!) (clausesOfANode (ans!!a)) o) p
+termAt :: ONode a TreeVar -> TreePath -> a
+termAt (ONode ans) [TreeLink a _]       = aNodeTerm $ ans!!a
+termAt (ONode ans) ((TreeLink a o) : p) =
+  termAt ((IntMap.!) (aNodeClauses (ans!!a)) o) p
 termAt _ [] = error "tree path should be non-empty"
+
+clauseAt :: Program1 -> TreePath -> Clause1
+clauseAt _ [] = error "undefined: clause at the empty path"
+clauseAt pr p = (unPr pr)!!(oNodeIdx $ last p)
 
 -- | Mgu of a term at the given path with the head of a clause whose index is at
 -- the end of the path.
 mguMaybeAt :: Program1 -> ONode Term1 TreeVar -> TreePath -> Maybe Subst1
 mguMaybeAt _ _ [] = error "tree path should be non-empty"
 mguMaybeAt pr t p = mguMaybe (termAt t p) $ clHead $ (unPr pr)!!(oNodeIdx (last p))
+
+transitionTree :: Program1 -> ONode Term1 TreeVar -> TreeVar ->
+                  Maybe (ONode Term1 TreeVar)
+transitionTree pr t v = do
+  p <- pathOfTreeVar v t
+  return $ case mguMaybeAt pr t p of
+             -- empty resolvent
+             Nothing -> treeInsertAt t p (ONode [])
+             -- the resolvent is s
+             Just s  -> treeInsertAt ({- FIXME: apply s -} t) p $
+                        rewritingTree (liftedPr p) $
+                        clSubst s $
+                        clauseAt pr p
+  where
+    maxVarAt w = IntSet.findMax (varsTerm1 $ termAt t w)
+    liftedPr w = Pr $ liftVarsClause ((+1) <$> (Just $ maxVarAt w)) <$> unPr pr
+
+-- | @treeInsertAt t p r@ inserts the tree t at position p in t, replacing the
+-- previous subtree at p.
+treeInsertAt :: ONode a TreeVar -> TreePath -> ONode a TreeVar ->
+                ONode a TreeVar
+treeInsertAt (ONode ans) ((TreeLink a o) : p) r = ONode $
+  map (\(i, (ANode t ns)) -> ANode t $
+           IntMap.mapWithKey (\j n' -> treeInsertAt n' p r) ns)
+      (zip [0..] ans)
+treeInsertAt (ONodeVar v) [] r = r
+treeInsertAt _ p _ = error $ "tree insertion at " ++ show p ++ " is undefined here"
 
 -- | Rewriting tree: a maximal and-or tree constructed by repeated matching of a
 -- given clause against clauses in a given program.
