@@ -245,23 +245,42 @@ transitionTree pr t v = do
              -- empty resolvent
              Nothing -> treeInsertAt t p (ONode [])
              -- the resolvent is s
-             Just s  -> treeInsertAt ({- FIXME: apply s -} t) p $
+             Just s  -> {- FIXME resolve all other tree variables -}
+                        treeInsertAt (treeSubst t s) p $
                         rewritingTree (liftedPr p) $
                         clSubst s $
                         clauseAt pr p
   where
-    maxVarAt w = IntSet.findMax (varsTerm1 $ termAt t w)
-    liftedPr w = Pr $ liftVarsClause ((+1) <$> (Just $ maxVarAt w)) <$> unPr pr
+    liftedPr w = Pr $ liftVarsClause ((+1) <$> maxVarAt w) <$> unPr pr
+    maxVarAt w = if IntSet.null $ varsAt w then Nothing
+                 else Just $ IntSet.findMax $ varsAt w
+    varsAt w = varsTerm1 $ termAt t w
 
 -- | @treeInsertAt t p r@ inserts the tree t at position p in t, replacing the
--- previous subtree at p.
+-- tree variable at p.
+treeSubst :: ONode Term1 TreeVar -> Subst1 -> ONode Term1 TreeVar
+treeSubst (ONode ans) s = ONode $
+  map (\(i, n@(ANode t ns)) ->
+        ANode (t >>= subst s) $
+        IntMap.mapWithKey (\j n' -> treeSubst n' s)
+                          ns)
+      (zip [0..] ans)
+treeSubst n@(ONodeVar _) s = n
+
+-- | @treeInsertAt t p r@ inserts the tree t at position p in t, replacing the
+-- tree variable at p.
 treeInsertAt :: ONode a TreeVar -> TreePath -> ONode a TreeVar ->
                 ONode a TreeVar
-treeInsertAt (ONode ans) ((TreeLink a o) : p) r = ONode $
-  map (\(i, (ANode t ns)) -> ANode t $
-           IntMap.mapWithKey (\j n' -> treeInsertAt n' p r) ns)
+treeInsertAt (ONode ans) (lnk : p) r = ONode $
+  map (\(i, n@(ANode t ns)) ->
+        if i /= aNodeIdx lnk then n
+        else ANode t $
+             IntMap.mapWithKey (\j n' ->
+                                 if j /= oNodeIdx lnk then n'
+                                 else treeInsertAt n' p r)
+                               ns)
       (zip [0..] ans)
-treeInsertAt (ONodeVar v) [] r = r
+treeInsertAt (ONodeVar _) [] r = r
 treeInsertAt _ p _ = error $ "tree insertion at " ++ show p ++ " is undefined here"
 
 -- | Rewriting tree: a maximal and-or tree constructed by repeated matching of a
