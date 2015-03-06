@@ -245,6 +245,7 @@ mguMaybeAt :: Program1 -> ONode Term1 TreeVar -> TreePath -> Maybe Subst1
 mguMaybeAt _ _ [] = error "tree path should be non-empty"
 mguMaybeAt pr t p = mguMaybe (termAt t p) $ clHead $ (unPr pr)!!(oNodeIdx (last p))
 
+-- | Tree transition by mgu computation at a given tree variable.
 treeTransition :: Program1 -> ONode Term1 TreeVar -> TreeVar ->
                   Maybe (ONode Term1 TreeVar)
 treeTransition pr t v = do
@@ -255,14 +256,19 @@ treeTransition pr t v = do
              -- the resolvent is s
              Just s  -> {- FIXME resolve all other tree variables -}
                         treeInsertAt (treeSubst t s) p $
-                        rewritingTree (liftedPr p) $
-                        clSubst s $
-                        clauseAt pr p
+                        fst $
+                        rewritingTreeV (liftedPr p)
+                                       (clSubst s $ clauseAt pr p)
+                                       nextTreeVar
+
   where
     liftedPr w = Pr $ liftVarsClause ((+1) <$> maxVarAt w) <$> unPr pr
     maxVarAt w = if IntSet.null $ varsAt w then Nothing
                  else Just $ IntSet.findMax $ varsAt w
     varsAt w = varsTerm1 $ termAt t w
+    nextTreeVar = case maxTreeVar t of
+      Just v  -> v + 1
+      Nothing -> 0
 
 -- | @treeSubst t s@ applies the substitution @s@ to all terms in the tree and
 -- keeps the tree variables.
