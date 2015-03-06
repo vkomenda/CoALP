@@ -237,9 +237,9 @@ mguMaybeAt :: Program1 -> ONode Term1 TreeVar -> TreePath -> Maybe Subst1
 mguMaybeAt _ _ [] = error "tree path should be non-empty"
 mguMaybeAt pr t p = mguMaybe (termAt t p) $ clHead $ (unPr pr)!!(oNodeIdx (last p))
 
-transitionTree :: Program1 -> ONode Term1 TreeVar -> TreeVar ->
+treeTransition :: Program1 -> ONode Term1 TreeVar -> TreeVar ->
                   Maybe (ONode Term1 TreeVar)
-transitionTree pr t v = do
+treeTransition pr t v = do
   p <- pathOfTreeVar v t
   return $ case mguMaybeAt pr t p of
              -- empty resolvent
@@ -256,8 +256,8 @@ transitionTree pr t v = do
                  else Just $ IntSet.findMax $ varsAt w
     varsAt w = varsTerm1 $ termAt t w
 
--- | @treeInsertAt t p r@ inserts the tree t at position p in t, replacing the
--- tree variable at p.
+-- | @treeSubst t s@ applies the substitution @s@ to all terms in the tree and
+-- keeps the tree variables.
 treeSubst :: ONode Term1 TreeVar -> Subst1 -> ONode Term1 TreeVar
 treeSubst (ONode ans) s = ONode $
   map (\(i, n@(ANode t ns)) ->
@@ -328,26 +328,6 @@ resolventTreeO pr t i vin vt n@(ONodeVar v)
       Just s  -> fst $ rewritingTreeV pr (clSubst s ci) vin
       Nothing -> n
   | otherwise = n
-
-transitionTreeA :: Program1 -> TreeVar -> TreeVar ->
-                   Subst1 -> ONode Term1 TreeVar ->
-                   ANode Term1 TreeVar -> ANode Term1 TreeVar
-transitionTreeA pr vin vt s tt (ANode a ns) =
-  ANode a_s (IntMap.mapWithKey (\i -> transitionTreeO pr a_s i vin vt s tt) ns)
-  where
-    a_s = a >>= subst s
-
--- FIXME: compute both the tree and the substitution in resolventTreeO and give
--- those as arguments here.
-transitionTreeO :: Program1 -> Term1 -> Int -> TreeVar -> TreeVar ->
-                   Subst1 -> ONode Term1 TreeVar ->
-                   ONode Term1 TreeVar -> ONode Term1 TreeVar
-transitionTreeO pr t i vin vt s tt (ONode ns) =
-  ONode $ map (transitionTreeA pr vin vt s tt) ns
-transitionTreeO pr t i vin vt s tt n@(ONodeVar v)
-  | v == vt   = tt
-                -- FIXME: correct the input fresh tree variable
-  | otherwise = resolventTreeO pr t i vin vt n
 
 {-
 type BranchPosHistory a b = HashMap a (IntMap (HashSet Pos, HashSet [Term a b]))
