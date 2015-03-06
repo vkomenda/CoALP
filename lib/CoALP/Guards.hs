@@ -216,6 +216,14 @@ treeVars p (ONode ans)  = IntMap.unions tvs
         (\j n -> IntMap.union $ treeVars (p ++ [TreeLink i j]) n)
         IntMap.empty ns
 
+-- | Maximum tree variable in a tree, if the tree contains variables.
+maxTreeVar :: ONode a TreeVar -> Maybe TreeVar
+maxTreeVar t = go t Nothing
+  where
+    goa (ANode _ ns) v = IntMap.foldr (\n x -> go n x) v ns
+    go  (ONode ans)  v = foldr (\n x -> x `max` goa n x) v ans
+    go  (ONodeVar x) v = v `max` Just x
+
 pathOfTreeVar :: TreeVar -> ONode a TreeVar -> Maybe TreePath
 pathOfTreeVar v = IntMap.lookup v . treeVars []
 
