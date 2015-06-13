@@ -8,7 +8,6 @@
 module CoALP.Subst where
 
 import Prelude hiding ( foldr, any )
-import GHC.Exts
 
 import CoALP.Term
 
@@ -28,8 +27,6 @@ import Data.Foldable
 -- 'Kleisli' arrow of a monad @m@ in that it has a 'HashMap' implementation
 -- rather than a purely functional implementation.
 newtype Subst m a b = Subst {unSubst :: HashMap a (m b)}
---data Subst m a b where
---  Subst :: (Hashable a, Hashable b) => HashMap a (m b) -> Subst m a b
 
 deriving instance (Eq a, Eq (m b)) => Eq (Subst m a b)
 
@@ -46,31 +43,6 @@ instance (Hashable a, Hashable (m b)) => Hashable (Subst m a b) where
   hashWithSalt salt (Subst s) =
     hashWithSalt salt $
     HashMap.foldrWithKey (\v t h -> h `hashWithSalt` v `hashWithSalt` t) 0x5B57 s
-{-
-  hash s =
-    HashMap.foldrWithKey (\v t h -> h `xor` (hash v `rotate` 2)
-                                      `xor` (hash t `rotate` (-3))
-                         ) 0x5B57 s
--}
-
--- | The structure of the Kleisli category for a monad with constraints.
-class KleisliC (cat :: (* -> *) -> * -> * -> *)  where
-  type KleisliC1 a :: Constraint
-  type KleisliC1 a = ()
-
-  type KleisliC2 m a b c :: Constraint
-  type KleisliC2 m a b c = ()
-
-  idc   :: KleisliC1 a       => cat m a a
-  compc :: KleisliC2 m a b c => cat m b c -> cat m a b -> cat m a c
-
-instance KleisliC Subst where
-  type KleisliC1 a = (Eq a, Hashable a)
-  type KleisliC2 m a b c =
-    (Monad m, Eq a, Hashable a, Eq b, Hashable b, Hashable c,
-     Injectable b c, Injectable b a)
-  idc   = identity
-  compc = flip compose
 
 -- | The canonical representation of the identity substitution.
 identity :: (Eq a, Hashable a) => Subst m a a

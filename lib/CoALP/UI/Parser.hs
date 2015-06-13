@@ -14,7 +14,8 @@ import Control.Monad ( void )
 import Text.Parsec
 import Data.Functor.Identity
 import Control.Applicative ( (<$>), (<*) )
-import qualified Data.HashSet as HashSet
+import qualified Data.Array as Array
+
 import Data.HashMap.Lazy ( HashMap )
 import qualified Data.HashMap.Lazy as HashMap
 
@@ -42,11 +43,6 @@ instance Read Program1 where
 instance Read Goal1 where
   readsPrec p s = do
     return (fromStringSt onlyGoal    (TPS HashMap.empty p) s, "")
-
-instance Read ModeAssoc where
-  readsPrec _ s = do
-    return (fromStringSt onlyModeAssocs tpsInit s, "")
-
 
 tpsInit :: TermParserSt
 tpsInit = TPS HashMap.empty 0
@@ -136,11 +132,13 @@ clause = do
 onlyClause :: TermParser Clause1
 onlyClause = clause <* eof
 
-program :: TermParser Program1
-program = spaces >> Pr <$> clause `sepEndBy` forgetVars
+program1 :: TermParser Program1
+program1 = spaces >> makeProgram <$> clause `sepEndBy` forgetVars
+  where
+    makeProgram cls = Program $ Array.listArray (0, length cls - 1) cls
 
 onlyProgram :: TermParser Program1
-onlyProgram = program <* eof
+onlyProgram = program1 <* eof
 
 onlyProgramSt :: TermParser (Program1, TermParserSt)
 onlyProgramSt = do
@@ -148,15 +146,15 @@ onlyProgramSt = do
   st <- getState
   return (pr, st)
 
-goal :: TermParser Goal1
-goal = do
+goal1 :: TermParser Goal1
+goal1 = do
   spaces >> from
   b <- (term <* spaces) `sepBy` comma
   period
-  return $ Go b
+  return $ Goal b
 
 onlyGoal :: TermParser Goal1
-onlyGoal = goal <* eof
+onlyGoal = goal1 <* eof
 
 onlyGoalSt :: TermParser (Goal1, TermParserSt)
 onlyGoalSt = do
@@ -205,61 +203,9 @@ programFromString = termParseCases onlyProgram "program"
 programFromFile :: String -> IO Program1
 programFromFile = termParseFileCases onlyProgram "program"
 
-input :: TermParser Direction
-input = char '+' >> return Input
-
-output :: TermParser Direction
-output = char '-' >> return Output
-
-direction :: TermParser Direction
-direction = input <|> output
-
-eager :: TermParser Order
-eager = char '!' >> return Eager
-
-lazy :: TermParser Order
-lazy = char '?' >> return Lazy
-
-order :: TermParser Order
-order = eager <|> lazy
-
-mode :: TermParser Mode
-mode = do
-  d <- direction
-  o <- order
-  return $ M d o
-
-modes ::  TermParser [Mode]
-modes =
-  (between parenOpen parenClose $ (mode <* spaces) `sepBy` comma) <* try spaces
-
-modeAssoc :: TermParser ModeAssoc
-modeAssoc = do
-  ident <- conId
-  modes >>= return . ModeAssoc . HashMap.singleton ident . HashSet.singleton
-
-{-
-onlyModeAssoc :: TermParser ModeAssoc
-onlyModeAssoc = modeAssoc <* eof
--}
-
-onlyModeAssocs :: TermParser ModeAssoc
-onlyModeAssocs = many1 modeAssoc <* eof >>= return . unionModeAssoc
-
-modeAssocsFromString :: String -> ModeAssoc
-modeAssocsFromString = termParseCases onlyModeAssocs "modes"
-
-modeAssocsFromFile :: String -> IO ModeAssoc
-modeAssocsFromFile file = do
-  str <- readFile file
-  case termParse onlyModeAssocs "modes" str of
-    Left e  -> print e >> fail "parse error"
-    Right r -> return r
-
 -- | Top-level syntactic items present in input text.
 data Item = ItemClause    Clause1
           | ItemGoal      Goal1
-          | ItemModeAssoc ModeAssoc
           | ItemComment   ()            -- ^ forgets comments
           deriving (Show, Eq)
 
@@ -273,8 +219,7 @@ items =
   many1
   (
     clause    `as` ItemClause    <|>
-    goal      `as` ItemGoal      <|>
-    modeAssoc `as` ItemModeAssoc <|>
+    goal1     `as` ItemGoal      <|>
     comment   `as` ItemComment   <|>
     unexpected "Unexpected item in bagging area :)"
   )
@@ -289,16 +234,15 @@ itemsFile = termParseFileCases items "items"
 
 -- | Categorisation function that applies after items have been retrieved from a
 -- string or from a file.
-groupItems :: [Item] -> ([Clause1], [Goal1], [ModeAssoc])
-groupItems = foldr ins ([], [], [])
+groupItems :: [Item] -> ([Clause1], [Goal1])
+groupItems = foldr ins ([], [])
   where
-    ins (ItemClause    c) (cs, gs, ms) = (c:cs, gs, ms)
-    ins (ItemGoal      g) (cs, gs, ms) = (cs, g:gs, ms)
-    ins (ItemModeAssoc m) (cs, gs, ms) = (cs, gs, m:ms)
-    ins (ItemComment   _) old          = old
+    ins (ItemClause    c) (cs, gs) = (c:cs, gs)
+    ins (ItemGoal      g) (cs, gs) = (cs, g:gs)
+    ins (ItemComment   _) old      = old
 
-parseItemsFile :: String -> IO ([Clause1], [Goal1], [ModeAssoc])
+parseItemsFile :: String -> IO ([Clause1], [Goal1])
 parseItemsFile fn = itemsFile fn >>= return . groupItems
 
-parseItems :: String -> ([Clause1], [Goal1], [ModeAssoc])
+parseItems :: String -> ([Clause1], [Goal1])
 parseItems = groupItems . itemsString

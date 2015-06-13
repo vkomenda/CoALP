@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
 -- |
 -- * Terms
 
@@ -7,7 +7,6 @@ module CoALP.Term where
 import Prelude hiding (foldr, foldl, any)
 
 import Control.DeepSeq
---import Data.Bits
 import Data.Hashable
 import           Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
@@ -17,11 +16,14 @@ import Data.Foldable
 import Data.Traversable
 import Control.Monad
 import Control.Applicative
+import GHC.Generics (Generic)
 
 -- | Type of term for any type of functional symbol and any type of variable.
-data Term a b = Var !b               -- ^ a variable
-              | Fun !a ![Term a b]   -- ^ a function
-              deriving (Eq, Ord)
+data Term a b = Var b              -- ^ a variable
+              | Fun a [Term a b]   -- ^ a function
+              deriving (Eq, Ord, Generic)
+
+instance (Hashable a, Hashable b) => Hashable (Term a b)
 
 -- | Type of first-order term.
 --
@@ -42,12 +44,10 @@ data Term a b = Var !b               -- ^ a variable
 --
 type Term1 = Term String Int
 
+{-
 instance (Hashable a, Hashable b) => Hashable (Term a b) where
   hashWithSalt salt (Var v)    = salt `hashWithSalt` v
   hashWithSalt salt (Fun f ts) = salt `hashWithSalt` f `hashWithSalt` ts
-{-
-  hash (Var v)    =  hash v `rotate` 1
-  hash (Fun f ts) = (hash f `rotate` 2) `xor` hash ts
 -}
 
 instance (NFData a, NFData b) => NFData (Term a b) where
@@ -132,8 +132,8 @@ recReduct (Var i)    u@(Fun _ (_:_)) = any (== i) u
 recReduct (Fun c []) u@(Fun _ (_:_)) =
   foldrf (\ab -> (&&) (samecon ab)) False u
   where
-    samecon _        = False
     samecon (Left d) = d == c
+    samecon _        = False
 recReduct (Fun f ts) (Fun g us) | f == g =
   any (uncurry recReduct) (zip ts us)
 recReduct _ _ = False

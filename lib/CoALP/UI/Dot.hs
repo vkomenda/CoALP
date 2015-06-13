@@ -8,33 +8,43 @@ import Prelude hiding (mapM_)
 import CoALP
 import CoALP.UI.Printer ()
 
-import Control.Applicative ((<$>))
+--import Control.Applicative ((<$>))
+import qualified Data.Array as Array
 import Data.Foldable
-import qualified Data.HashMap.Lazy as Map
-import System.Process
-import System.Directory
-import Control.Exception
-import Control.Monad (void)
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as Set
+--import System.Process
+--import System.Directory
+--import Control.Exception
+--import Control.Monad (void)
+--import Data.HashSet (HashSet)
+--import qualified Data.HashSet as Set
 
 -- | Renders a tree as a string in the ImageMagick dot format.
-render :: ONode Occ -> String
-render t0 = "digraph G {\n" ++ snd (go t0 0) ++ "}"
+render :: TreeOper1 -> String
+render t0 = "digraph G {\n" ++ snd (goA t0 0) ++ "}"
   where
-    go :: ONode Occ -> Int -> (Int, String)
-    go (ONode []) start =
+    goA :: TreeOper1 -> Int -> (Int, String)
+    goA (NodeOper a b) start =
+      let (next, dot) = connect goB (Array.elems b) (start + 1) start in
+      (next, show start ++ " [shape=none,label=\"" ++
+             show a ++ "\"];\n" ++ dot)
+
+    goB :: Oper [TreeOper1] -> Int -> (Int, String)
+    goB (Right (Just [])) start =
       (start + 1, show start ++
                   "[shape=square,width=.2,label=\"\",fixedsize=true];\n")
-    go (ONode ts) start =
+    goB (Right (Just ts)) start =
       let (next, dot) = connect goA ts (start + 1) start in
-      (next, show start ++ " [shape=point];\n" ++ dot)
-    goA (ANode occ its) start =
-      let (next, dot) = connect go (snd <$> Map.toList its) (start + 1) start in
-      (next, show start ++ " [shape=none,label=\"" ++
-             show (oTerm occ) ++ "\"];\n" ++ dot)
+       (next, show start ++ " [shape=point];\n" ++ dot)
+    goB (Right Nothing) start =
+      (start + 1, show start ++
+                  "[shape=circle,width=.2,label=\"\",fixedsize=true];\n")
+    goB (Left ToBeMatched) start =
+      (start + 1, show start ++
+                  "[shape=square,width=.2,label=\"!\",fixedsize=true];\n")
+    goB (Left ToBeUnified) start =
+      (start + 1, show start ++
+                  "[shape=square,width=.2,label=\"?\",fixedsize=true];\n")
 
---    connect :: [ONode Occ] -> Int -> Int -> (Int, String)
     connect fstep ts start parent =
       foldl' (\(start_t, dot) t ->
                let (next, dot_t) = fstep t start_t in
@@ -42,6 +52,7 @@ render t0 = "digraph G {\n" ++ snd (go t0 0) ++ "}"
                       "[arrowhead=none];\n"))
              (start, "") ts
 
+{-
 -- | Saves a derivation rendered in the dot format in a specified directory, in
 -- a set of PNG files therein.
 save :: String -> [HashSet (ONode Occ)] -> IO ()
@@ -59,7 +70,7 @@ save dir tts =
             (idx ts)
     idx :: [a] -> [(a, Int)]
     idx l = zip l [0..]
-    
+
 saveFinal :: String -> [HashSet (ONode Occ)] -> IO ()
 saveFinal dir tts =
    flip catch (print :: IOError -> IO ()) $ do
@@ -75,3 +86,4 @@ saveFinal dir tts =
             (idx ts)
     idx :: [a] -> [(a, Int)]
     idx l = zip l [0..]
+-}

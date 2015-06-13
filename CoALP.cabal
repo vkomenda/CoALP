@@ -3,7 +3,7 @@ name:          CoALP
 --             | ,----- pre-release
 --             | | ,--- fixes and new functionality
 --             | | |
-version:       0.0.3
+version:       0.0.4
 license:       LGPL-3
 author:        Vladimir Komendantskiy <komendantsky@gmail.com>,
                Jónathan Heras <joheras@gmail.com>
@@ -37,8 +37,6 @@ library
                     CoALP.Subst
                     CoALP.Clause
                     CoALP.Term
-                    CoALP.Mode
-                    CoALP.Guards
                     CoALP.UI.Dot
                     CoALP.UI.Parser
                     CoALP.UI.Printer
@@ -48,10 +46,12 @@ library
   else
     ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
 
-  build-depends:    base                 >= 4.6,
+  build-depends:    base                 >= 4.6 && < 5,
+                    array                == 0.5.*,
                     containers           >= 0.5,
                     mtl                  >= 2.1,
                     directory,
+                    fgl                  == 5.5.*,
                     hashable,
                     deepseq,
                     parsec               >= 3.1,
@@ -85,7 +85,7 @@ executable CoALPi
                     deepseq,
                     process              >= 1.1,
                     unordered-containers >= 0.2.3,
-                    optparse-applicative >= 0.7
+                    optparse-applicative == 0.11.*
 
   default-extensions: BangPatterns
 
