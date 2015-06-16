@@ -184,39 +184,49 @@ data Derivation = Derivation
                   , derivationTrees   :: HashMap TreeOper1 Node
                     -- | work queue
                   , derivationQueue   :: [Node]
-                    -- | read-only environment - TODO
+                    -- read-only environment - TODO
+                    -- | step function
                   , derivationFun     :: TreeOper1 -> [(Transition, TreeOper1)]
+                    -- | halting condition
+                  , derivationHalt    :: TreeOper1 -> Bool
+                    -- | maximum number of nodes in the graph
                   , derivationMaxSize :: Int
                   }
 
 initDerivation :: (Int, Int) -> Term1 ->
                   (TreeOper1 -> [(Transition, TreeOper1)]) ->
+                  (TreeOper1 -> Bool) ->
                   Derivation
-initDerivation bounds a f =
+initDerivation bounds a f h =
   Derivation
   {
     derivation        = Graph.mkGraph [(0, t)] []
   , derivationTrees   = HashMap.singleton t 0
   , derivationQueue   = [0]
   , derivationFun     = f
+  , derivationHalt    = h
   , derivationMaxSize = 100
   }
   where
     t = initTree bounds a
 
-data DErr = DErrNodeNotFound Node
-          | DErrMaxSizeExceeded
-          deriving Show
+data Halt a = HaltNodeNotFound Node
+            | HaltMaxSizeExceeded
+            | HaltConditionMet a
+            deriving Show
+
+type Halt1 = Halt TreeOper1
 
 success :: Either a ()
 success = Right ()
 
 runDerivation :: (Int, Int) -> Term1 ->
                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
-                 (Either DErr (), Derivation)
-runDerivation bounds a f = runState derive $ initDerivation bounds a f
+                 (TreeOper1 -> Bool) ->
+                 (Either Halt1 (), Derivation)
+runDerivation bounds a f h = runState derive $ initDerivation bounds a f h
 
-derive :: State Derivation (Either DErr ())
+derive :: State Derivation (Either Halt1 ())
 derive = do
   d <- gets derivation
   q <- gets derivationQueue
@@ -227,16 +237,19 @@ derive = do
      if n < m
        then
          case Graph.lab d n of
-          Nothing -> return $ Left $ DErrNodeNotFound n
+          Nothing -> return $ Left $ HaltNodeNotFound n
           Just t -> do
             f <- gets derivationFun
             sequence_ $ queueBreadthFirst n <$> f t
             modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
-            derive
-       else return $ Left DErrMaxSizeExceeded
+            h <- gets derivationHalt
+            if h t
+              then return $ Left $ HaltConditionMet t
+              else derive
+       else return $ Left HaltMaxSizeExceeded
 
 queueBreadthFirst :: Node -> (Transition, TreeOper1) ->
-                     State Derivation (Either DErr ())
+                     State Derivation (Either a ())
 queueBreadthFirst n (r, t) = do
   ts <- gets derivationTrees
   case HashMap.lookup t ts of    -- FIXME: equiv. up to variable renaming
@@ -291,7 +304,8 @@ matchSubtrees p t = go t []
          _ -> []
       ) `concatMap` (Array.assocs b)
 
-runMatch :: Program1 -> Term1 -> (Either DErr (), Derivation)
-runMatch p a = runState derive $
-               initDerivation (Array.bounds $ program p) a $
-               matchSubtrees p
+-- | Implementation of Tier 2 guardedness check.
+runMatch :: Program1 -> Term1 -> (Either Halt1 (), Derivation)
+runMatch p a = runDerivation (Array.bounds $ program p) a (matchSubtrees p) h
+  where
+    h = not . null . treeLoopsBy (\a1 a2 -> not (a1 `recReduct` a2))

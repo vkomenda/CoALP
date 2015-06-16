@@ -8,7 +8,6 @@ import CoALP.Subst
 import CoALP.Tree
 
 import Control.Applicative
-import Control.Monad.Trans.State
 import Data.Array ((!), (//))
 import qualified Data.Array as Array
 import Data.Foldable
@@ -70,7 +69,8 @@ unifSubtrees p t = go t []
          _ -> []
       ) `concatMap` (Array.assocs b)
 
-runResolution :: Program1 -> Term1 -> (Either DErr (), Derivation)
-runResolution p a = runState derive $
-                    initDerivation (Array.bounds $ program p) a $
-                    (unifSubtrees p . matchTree p)
+runResolution :: Program1 -> Term1 -> (Either Halt1 (), Derivation)
+runResolution p a = runDerivation (Array.bounds $ program p) a f h
+  where
+    f = unifSubtrees p . matchTree p
+    h = const False  -- FIXME
