@@ -6,9 +6,11 @@ module CoALP
   , module CoALP.Clause
   , module CoALP.Subst
   , module CoALP.Tree
+  , module CoALP.Resolution
   ) where
 
 import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
 import CoALP.Tree
+import CoALP.Resolution

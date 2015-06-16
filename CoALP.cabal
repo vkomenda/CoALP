@@ -33,7 +33,8 @@ library
   exposed-modules:  CoALP
                     CoALP.UI
 
-  other-modules:    CoALP.Tree
+  other-modules:    CoALP.Resolution
+                    CoALP.Tree
                     CoALP.Subst
                     CoALP.Clause
                     CoALP.Term

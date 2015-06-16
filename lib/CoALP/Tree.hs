@@ -15,11 +15,11 @@ import Control.Monad.Trans.State
 import Data.Array (Array, (!), (//))
 import qualified Data.Array as Array
 import Data.Foldable
-import Data.Graph.Inductive (Gr, Node, (&))
-import qualified Data.Graph.Inductive as Graph
 import Data.Hashable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
+import Data.Graph.Inductive (Gr, Node, (&))
+import qualified Data.Graph.Inductive as Graph
 import Data.Maybe
 import Data.Traversable
 
@@ -33,8 +33,6 @@ data Tree a = Node
               , nodeBundle :: Array Int (Maybe [Tree a])
               }
             deriving (Show, Eq)
-
-type Rel a = a -> a -> Bool
 
 -- | Computation of the set of loops for the guardedness check 2.
 treeLoopsBy :: Ord a => Rel a -> Tree a -> Set (a, a)
@@ -122,6 +120,10 @@ instance Traversable TreeOper where
   traverse f (NodeOper a b) =
     NodeOper <$> f a <*> (traverse.traverse.traverse.traverse.traverse) f b
 
+initTree :: (Int, Int) -> Term1 -> TreeOper1
+initTree bounds a =
+  NodeOper a $ Array.listArray bounds (repeat $ Left ToBeMatched)
+
 matchTree :: Program1 -> TreeOper1 -> TreeOper1
 matchTree p (NodeOper a b) =
   NodeOper a $ Array.listArray (Array.bounds b) (grow <$> Array.assocs b)
@@ -139,9 +141,32 @@ matchTree p (NodeOper a b) =
         c = (program p)!i
     grow oper = snd oper
 
-initTree :: (Int, Int) -> Term1 -> TreeOper1
-initTree bounds a =
-  NodeOper a $ Array.listArray bounds (repeat $ Left ToBeMatched)
+type Rel a = a -> a -> Bool
+
+-- | Computation of the set of loops for the guardedness check 2.
+treeLoopsBy :: (Eq a, Hashable a) => Rel a -> TreeOper a -> [(a, a)]
+treeLoopsBy rel = treeLoopsBy' rel [] []
+
+treeLoopsBy' :: (Eq a, Hashable a) => Rel a -> [(Int, a)] -> [(a, a)] ->
+                TreeOper a -> [(a, a)]
+treeLoopsBy' rel termsAbove knownLoops (NodeOper a bun) =
+  foldr onFibres knownLoops (Array.assocs bun)
+  where
+    related i = filter (\(j, b) -> i == j && a `rel` b) $ termsAbove
+    foundLoops i = (\(_, b) -> (b, a)) <$> related i
+    onFibres (_, Right Nothing) loops1 = loops1
+    onFibres (i, Right (Just body)) loops1 =
+      foldr (\b loops2 -> treeLoopsBy' rel ((i, a) : termsAbove) loops2 b
+            ) (foundLoops i ++ loops1) body
+    onFibres (_, Left _) loops1 = loops1
+
+unguardedMatchLoops :: Program1 -> Int -> [(Term1, Term1)]
+unguardedMatchLoops p i =
+  treeLoopsBy (\a b -> not (a `recReduct` b)) $
+  matchTree p $
+  initTree (Array.bounds $ program p) (clHead c)
+  where
+    c = (program p)!i
 
 type Path = [Int]
 
@@ -151,62 +176,6 @@ data Transition = Transition
                   , transitionSubst :: Maybe Subst1
                   }
 
-toBeUnified :: TreeOper1 -> Path -> [Path]
-toBeUnified (NodeOper _ b) prefix =
-  (\(i, oper) ->
-    case oper of
-     Left ToBeUnified -> [prefix ++ [i]]
-     Right (Just ts)  -> (\(j, t) ->
-                           toBeUnified t (prefix ++ [i, j])
-                         ) `concatMap` (zip [0..] ts)
-     _ -> []
-  ) `concatMap` (Array.assocs b)
-
-maxVarTree :: TreeOper1 -> Maybe Int
-maxVarTree = foldr (max . foldr (max . Just) Nothing) Nothing
-
-treeTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
-treeTransitions p t = go t []
-  where
-    nVars = (+ 1) <$> maxVarTree t
-    go :: TreeOper1 -> Path -> [(Transition, TreeOper1)]
-    go (NodeOper a b) prefix =
-      (\(i, oper) ->
-        case oper of
-         Right (Just ts)  -> (\(j, u) -> go u (prefix ++ [i, j])
-                             ) `concatMap` (zip [0..] ts)
-         Left ToBeUnified -> [(Transition w ms, grow w $ unifyTerms t)]
-           where
-             w = prefix ++ [i]
-             ms = clHead c `mguMaybe` a
-             c = liftVarsClause nVars $ (program p)!i
-
-             unifyTerms
-               | isNothing ms = id
-               | otherwise = fmap (>>= subst (fromJust ms))
-
-             grow :: Path -> TreeOper1 -> TreeOper1
-             grow (k:l:u) (NodeOper a0 b0) =
-               NodeOper a0 $ b0 // [(k,
-                                     case b0!k of
-                                      Right (Just tbs) ->
-                                        Right $ Just $
-                                        take l tbs ++ grow u (tbs!!l) :
-                                        drop (l+1) tbs
-                                      _ -> error "invalid path"  -- TODO: return
-                                    )]
-             grow [k] (NodeOper a0 b0)
-               | isNothing ms = NodeOper a0 $ b0 // [(k, Right Nothing)]
-               | otherwise    = NodeOper a0 $ b0 // [(k, Right $ Just tbs)]
-               where
-                 tbs :: [TreeOper1]
-                 tbs = initTree (Array.bounds $ program p) <$>
-                       (>>= subst (fromJust ms)) <$> clBody c
-             grow _ _ = error "grow error"
-
-         _ -> []
-      ) `concatMap` (Array.assocs b)
-
 data Derivation = Derivation
                   {
                     -- | derivation graph
@@ -215,31 +184,37 @@ data Derivation = Derivation
                   , derivationTrees   :: HashMap TreeOper1 Node
                     -- | work queue
                   , derivationQueue   :: [Node]
-                    -- | program (read-only environment | TODO)
-                  , derivationProgram :: Program1
+                    -- | read-only environment - TODO
+                  , derivationFun     :: TreeOper1 -> [(Transition, TreeOper1)]
+                  , derivationMaxSize :: Int
                   }
 
-initDerivation :: Program1 -> Term1 -> Derivation
-initDerivation p a =
+initDerivation :: (Int, Int) -> Term1 ->
+                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
+                  Derivation
+initDerivation bounds a f =
   Derivation
   {
-    derivation = Graph.mkGraph [(0, t)] []
-  , derivationTrees = HashMap.singleton t 0
-  , derivationQueue = [0]
-  , derivationProgram = p
+    derivation        = Graph.mkGraph [(0, t)] []
+  , derivationTrees   = HashMap.singleton t 0
+  , derivationQueue   = [0]
+  , derivationFun     = f
+  , derivationMaxSize = 100
   }
   where
-    t = initTree (Array.bounds $ program p) a
+    t = initTree bounds a
 
 data DErr = DErrNodeNotFound Node
-            -- TODO: anything else?
+          | DErrMaxSizeExceeded
           deriving Show
 
 success :: Either a ()
 success = Right ()
 
-runDerivation :: Program1 -> Term1 -> (Either DErr (), Derivation)
-runDerivation p a = runState derive $ initDerivation p a
+runDerivation :: (Int, Int) -> Term1 ->
+                 (TreeOper1 -> [(Transition, TreeOper1)]) ->
+                 (Either DErr (), Derivation)
+runDerivation bounds a f = runState derive $ initDerivation bounds a f
 
 derive :: State Derivation (Either DErr ())
 derive = do
@@ -248,13 +223,17 @@ derive = do
   case q of
    [] -> return success
    n:_ -> do
-     case Graph.lab d n of
-      Nothing -> return $ Left $ DErrNodeNotFound n
-      Just t -> do
-        p <- gets derivationProgram
-        sequence_ $ queueBreadthFirst n <$> treeTransitions p (matchTree p t)
-        modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
-        derive
+     m <- gets derivationMaxSize
+     if n < m
+       then
+         case Graph.lab d n of
+          Nothing -> return $ Left $ DErrNodeNotFound n
+          Just t -> do
+            f <- gets derivationFun
+            sequence_ $ queueBreadthFirst n <$> f t
+            modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
+            derive
+       else return $ Left DErrMaxSizeExceeded
 
 queueBreadthFirst :: Node -> (Transition, TreeOper1) ->
                      State Derivation (Either DErr ())
@@ -273,3 +252,46 @@ queueBreadthFirst n (r, t) = do
      modify $ \st ->
        st { derivation = ([(r, n)], j, t, []) & derivation st }
      return success
+
+matchSubtrees :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
+matchSubtrees p t = go t []
+  where
+    go :: TreeOper1 -> Path -> [(Transition, TreeOper1)]
+    go (NodeOper a b) prefix =
+      (\(i, oper) ->
+        case oper of
+         Right (Just ts)  -> (\(j, u) -> go u (prefix ++ [i, j])
+                             ) `concatMap` (zip [0..] ts)
+         Left ToBeMatched -> [(Transition w ms, grow w t)]
+           where
+             w = prefix ++ [i]
+             ms = clHead c `matchMaybe` a
+             c = (program p)!i
+
+             grow :: Path -> TreeOper1 -> TreeOper1
+             grow (k:l:u) (NodeOper a0 b0) =
+               NodeOper a0 $ b0 // [(k,
+                                     case b0!k of
+                                      Right (Just tbs) ->
+                                        Right $ Just $
+                                        take l tbs ++ grow u (tbs!!l) :
+                                        drop (l+1) tbs
+                                      _ -> error "matchSubtrees: invalid path"
+                                           -- TODO: return
+                                    )]
+             grow [k] (NodeOper a0 b0)
+               | isNothing ms = NodeOper a0 $ b0 // [(k, Right Nothing)]
+               | otherwise    = NodeOper a0 $ b0 // [(k, Right $ Just tbs)]
+               where
+                 tbs :: [TreeOper1]
+                 tbs = initTree (Array.bounds $ program p) <$>
+                       (>>= subst (fromJust ms)) <$> clBody c
+             grow _ _ = error "matchSubtrees: grow error"
+
+         _ -> []
+      ) `concatMap` (Array.assocs b)
+
+runMatch :: Program1 -> Term1 -> (Either DErr (), Derivation)
+runMatch p a = runState derive $
+               initDerivation (Array.bounds $ program p) a $
+               matchSubtrees p
