@@ -4,7 +4,7 @@
 
 module CoALP.Tree where
 
-import Prelude hiding (foldr, concatMap, sequence_)
+import Prelude hiding (foldr, concatMap, all, sequence_)
 
 import CoALP.Term
 import CoALP.Clause
@@ -213,7 +213,7 @@ initDerivation bounds a f h =
 data Halt a = HaltNodeNotFound Node
             | HaltMaxSizeExceeded
             | HaltConditionMet a
-            deriving Show
+            deriving (Show, Eq)
 
 type Halt1 = Halt TreeOper1
 
@@ -309,3 +309,8 @@ runMatch :: Program1 -> Term1 -> (Either Halt1 (), Derivation)
 runMatch p a = runDerivation (Array.bounds $ program p) a (matchSubtrees p) h
   where
     h = not . null . treeLoopsBy (\a1 a2 -> not (a1 `recReduct` a2))
+
+guardedMatch :: Program1 -> Bool
+guardedMatch p = all ((== success) . fst) $ runMatch p <$> heads
+  where
+    heads = clHead <$> (Array.elems $ program p)
