@@ -24,7 +24,7 @@ instance ShowNoQ String where
 instance (ShowNoQ a, Show b) => Show (Term a b) where
   show (Var v)    = "X_" ++ show v
   show (Fun c []) = show0 c
-  show (Fun c ts) = show0 c ++ " (" ++ intercalate ", " (show <$> ts) ++ ")"
+  show (Fun c ts) = show0 c ++ "(" ++ intercalate ", " (show <$> ts) ++ ")"
 
 instance (ShowNoQ a, Show b) => Show (Clause a b) where
   show (t :- []) = show t ++ "."

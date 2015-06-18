@@ -4,7 +4,7 @@
 
 module CoALP.Tree where
 
-import Prelude hiding (foldr, concatMap, all, sequence_)
+import Prelude hiding (foldr, concat, concatMap, all, sequence, sequence_)
 
 import CoALP.Term
 import CoALP.Clause
@@ -89,7 +89,7 @@ data TBC = ToBeMatched | ToBeUnified
 
 instance Hashable TBC
 
-type Oper a = Either TBC (Maybe a)
+type Oper v = Either TBC (Maybe v)
 
 -- | Operational tree with strictly evaluated bundles.
 data TreeOper a =
@@ -176,57 +176,58 @@ data Transition = Transition
                   , transitionSubst :: Maybe Subst1
                   }
 
-data Derivation = Derivation
-                  {
-                    -- | derivation graph
-                    derivation        :: Gr TreeOper1 Transition
-                    -- | bijection from found trees to nodes
-                  , derivationTrees   :: HashMap TreeOper1 Node
-                    -- | work queue
-                  , derivationQueue   :: [Node]
-                    -- read-only environment - TODO
-                    -- | step function
-                  , derivationFun     :: TreeOper1 -> [(Transition, TreeOper1)]
-                    -- | halting condition
-                  , derivationHalt    :: TreeOper1 -> Bool
-                    -- | maximum number of nodes in the graph
-                  , derivationMaxSize :: Int
-                  }
+data Derivation v =
+  Derivation
+  {
+    -- | derivation graph
+    derivation        :: Gr TreeOper1 Transition
+    -- | bijection from found trees to nodes
+  , derivationTrees   :: HashMap TreeOper1 Node
+    -- | work queue
+  , derivationQueue   :: [Node]
+    -- read-only environment - TODO
+    -- | step function
+  , derivationStep    :: TreeOper1 -> [(Transition, TreeOper1)]
+    -- | halting condition
+  , derivationHalt    :: TreeOper1 -> Maybe v
+    -- | maximum number of nodes in the graph
+  , derivationMaxSize :: Int
+  }
 
 initDerivation :: (Int, Int) -> Term1 ->
                   (TreeOper1 -> [(Transition, TreeOper1)]) ->
-                  (TreeOper1 -> Bool) ->
-                  Derivation
+                  (TreeOper1 -> Maybe v) ->
+                  Derivation v
 initDerivation bounds a f h =
   Derivation
   {
     derivation        = Graph.mkGraph [(0, t)] []
   , derivationTrees   = HashMap.singleton t 0
   , derivationQueue   = [0]
-  , derivationFun     = f
+  , derivationStep    = f
   , derivationHalt    = h
-  , derivationMaxSize = 100
+  , derivationMaxSize = 500
   }
   where
     t = initTree bounds a
 
-data Halt a = HaltNodeNotFound Node
+data Halt v = HaltNodeNotFound Node
             | HaltMaxSizeExceeded
-            | HaltConditionMet a
+            | HaltConditionMet v
             deriving (Show, Eq)
 
-type Halt1 = Halt TreeOper1
+type Term1Loop = (Term1, Term1)
 
 success :: Either a ()
 success = Right ()
 
 runDerivation :: (Int, Int) -> Term1 ->
                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
-                 (TreeOper1 -> Bool) ->
-                 (Either Halt1 (), Derivation)
+                 (TreeOper1 -> Maybe v) ->
+                 (Either (Halt v) (), Derivation v)
 runDerivation bounds a f h = runState derive $ initDerivation bounds a f h
 
-derive :: State Derivation (Either Halt1 ())
+derive :: State (Derivation v) (Either (Halt v) ())
 derive = do
   d <- gets derivation
   q <- gets derivationQueue
@@ -239,17 +240,16 @@ derive = do
          case Graph.lab d n of
           Nothing -> return $ Left $ HaltNodeNotFound n
           Just t -> do
-            f <- gets derivationFun
+            f <- gets derivationStep
             sequence_ $ queueBreadthFirst n <$> f t
             modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
             h <- gets derivationHalt
-            if h t
-              then return $ Left $ HaltConditionMet t
-              else derive
+            case h t of
+             Nothing -> derive
+             Just v  -> return $ Left $ HaltConditionMet v
        else return $ Left HaltMaxSizeExceeded
 
-queueBreadthFirst :: Node -> (Transition, TreeOper1) ->
-                     State Derivation (Either a ())
+queueBreadthFirst :: Node -> (Transition, TreeOper1) -> State (Derivation v) ()
 queueBreadthFirst n (r, t) = do
   ts <- gets derivationTrees
   case HashMap.lookup t ts of    -- FIXME: equiv. up to variable renaming
@@ -260,11 +260,9 @@ queueBreadthFirst n (r, t) = do
        st { derivation = ([(r, n)], i, t, []) & derivation st
           , derivationTrees = HashMap.insert t i $ derivationTrees st
           , derivationQueue = derivationQueue st ++ [i] }
-     return success
    Just j -> do
      modify $ \st ->
        st { derivation = ([(r, n)], j, t, []) & derivation st }
-     return success
 
 matchSubtrees :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
 matchSubtrees p t = go t []
@@ -292,11 +290,11 @@ matchSubtrees p t = go t []
                                       _ -> error "matchSubtrees: invalid path"
                                            -- TODO: return
                                     )]
-             grow [k] (NodeOper a0 b0)
-               | isNothing ms = NodeOper a0 $ b0 // [(k, Right Nothing)]
-               | otherwise    = NodeOper a0 $ b0 // [(k, Right $ Just tbs)]
+             grow [k] (NodeOper a0 b0) = NodeOper a0 $ b0 // [(k, o)]
                where
-                 tbs :: [TreeOper1]
+                 o :: Oper [TreeOper1]
+                 o | isNothing ms = Left ToBeUnified
+                   | otherwise    = Right $ Just tbs
                  tbs = initTree (Array.bounds $ program p) <$>
                        (>>= subst (fromJust ms)) <$> clBody c
              grow _ _ = error "matchSubtrees: grow error"
@@ -304,13 +302,29 @@ matchSubtrees p t = go t []
          _ -> []
       ) `concatMap` (Array.assocs b)
 
--- | Implementation of Tier 2 guardedness check.
-runMatch :: Program1 -> Term1 -> (Either Halt1 (), Derivation)
+runMatch :: Program1 -> Term1 ->
+            (Either (Halt [Term1Loop]) (), Derivation [Term1Loop])
 runMatch p a = runDerivation (Array.bounds $ program p) a (matchSubtrees p) h
   where
-    h = not . null . treeLoopsBy (\a1 a2 -> not (a1 `recReduct` a2))
+    h t = if null l then Nothing else Just l
+      where l = loops t
+    loops = treeLoopsBy $ \a1 a2 -> not (a1 `recReduct` a2)
+
+-- | Implementation of Tier 2 guardedness check.
+--
+-- @matchLoops p@ is empty when the program @p@ is guarded by the Tier 2 check.
+--
+-- @matchLoops p@ equals @loops@ when the incremental loop search procedure
+-- halted with output @loops@, which may not necessarily contain the set of all
+-- loops in the program @p@. If more loops need to be found, 'runMatch' can be
+-- used iteratively by reapplication to the halted state to yield further loops
+-- if there are any.
+matchLoops :: Program1 -> [Term1Loop]
+matchLoops p = concat $ findLoops <$> runMatch p <$> heads
+  where
+    findLoops (Left (HaltConditionMet v), _) = v
+    findLoops _ = []
+    heads = clHead <$> (Array.elems $ program p)
 
 guardedMatch :: Program1 -> Bool
-guardedMatch p = all ((== success) . fst) $ runMatch p <$> heads
-  where
-    heads = clHead <$> (Array.elems $ program p)
+guardedMatch = null . matchLoops

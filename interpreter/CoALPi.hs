@@ -226,7 +226,7 @@ welcome =
   "░█▀▀░░░░░█▀█░█░░░█▀█░░░░▀░░█▀█░▀█▀░█▀▀░█▀▄░█▀█░█▀▄░█▀▀░▀█▀░█▀▀░█▀▄\n" ++
   "░█░░░█▀█░█▀█░█░░░█▀▀░░░░█░░█░█░░█░░█▀▀░█▀▄░█▀▀░█▀▄░█▀▀░░█░░█▀▀░█▀▄\n" ++
   "░▀▀▀░▀▀▀░▀░▀░▀▀▀░▀░░░░░░▀░░▀░▀░░▀░░▀▀▀░▀░▀░▀░░░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀\n\n" ++
-  "(C) 2014, University of Dundee / Logic Group\n\n" ++
+  "(C) 2014-2015, University of Dundee / Logic Group\n\n" ++
   "Type \"help\" for usage information.\n"
 
 bye :: String
@@ -249,7 +249,7 @@ nonInteractive op = do
       st           = iState0 {iProg = pr, iGoals = gs, iModes = m}
       (grdLevel, grdCont) = (abs &&& (>= 0)) $ optGuards op
       grd = all (\f -> f pr) $
-            take grdLevel [guardedClauses, guardedMatches, guardedMgus]
+            take grdLevel [const True {-FIXME-}, guardedMatches, undefined]
   when (grdLevel /= 0 && optVerbose op > 0) $
     putStrLn $ "Level " ++ show grdLevel ++ " guardedness check " ++
                if grd then "PASSED." else "FAILED."

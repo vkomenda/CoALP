@@ -1,6 +1,6 @@
 module CoALP.Resolution where
 
-import Prelude hiding (foldr, concatMap, sequence_)
+import Prelude hiding (all, any, foldr, concatMap, sequence_)
 
 import CoALP.Term
 import CoALP.Clause
@@ -57,11 +57,11 @@ unifSubtrees p t = go t []
                                         drop (l+1) tbs
                                       _ -> error "unifSubtrees: invalid path"
                                     )]
-             grow [k] (NodeOper a0 b0)
-               | isNothing ms = NodeOper a0 $ b0 // [(k, Right Nothing)]
-               | otherwise    = NodeOper a0 $ b0 // [(k, Right $ Just tbs)]
+             grow [k] (NodeOper a0 b0) = NodeOper a0 $ b0 // [(k, o)]
                where
-                 tbs :: [TreeOper1]
+                 o :: Oper [TreeOper1]
+                 o | isNothing ms = Right Nothing
+                   | otherwise    = Right $ Just tbs
                  tbs = initTree (Array.bounds $ program p) <$>
                        (>>= subst (fromJust ms)) <$> clBody c
              grow _ _ = error "unifSubtrees: grow error"
@@ -69,8 +69,22 @@ unifSubtrees p t = go t []
          _ -> []
       ) `concatMap` (Array.assocs b)
 
-runResolution :: Program1 -> Term1 -> (Either Halt1 (), Derivation)
+runResolution :: Program1 -> Term1 ->
+                 (Either (Halt TreeOper1) (), Derivation TreeOper1)
 runResolution p a = runDerivation (Array.bounds $ program p) a f h
   where
     f = unifSubtrees p . matchTree p
-    h = const False  -- FIXME
+    h t = if successful t then Just t else Nothing
+
+successful :: TreeOper1 -> Bool
+successful = any hasSuccess . Array.elems . nodeBundleOper
+  where
+    hasSuccess (Right (Just ts)) = all final ts || any successful ts
+    hasSuccess _                 = False
+
+final :: TreeOper1 -> Bool
+final = all finalB . Array.elems . nodeBundleOper
+  where
+    finalB (Right (Just ts)) = all final ts
+    finalB (Right Nothing)   = True
+    finalB _                 = False
