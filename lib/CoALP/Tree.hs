@@ -206,7 +206,7 @@ initDerivation bounds a f h =
   , derivationQueue   = [0]
   , derivationStep    = f
   , derivationHalt    = h
-  , derivationMaxSize = 500
+  , derivationMaxSize = 10000
   }
   where
     t = initTree bounds a

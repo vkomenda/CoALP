@@ -79,7 +79,7 @@ runResolution p a = runDerivation (Array.bounds $ program p) a f h
 successful :: TreeOper1 -> Bool
 successful = any hasSuccess . Array.elems . nodeBundleOper
   where
-    hasSuccess (Right (Just ts)) = all final ts || any successful ts
+    hasSuccess (Right (Just ts)) = all final ts || all successful ts
     hasSuccess _                 = False
 
 final :: TreeOper1 -> Bool
