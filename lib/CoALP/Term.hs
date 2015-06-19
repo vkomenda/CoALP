@@ -12,6 +12,7 @@ import           Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import           Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
+import Data.Maybe (isNothing)
 import Data.Foldable
 import Data.Traversable
 import Control.Monad
@@ -80,6 +81,12 @@ instance Traversable (Term a) where
 instance Applicative (Term a) where
   pure  = return
   (<*>) = ap
+
+maxVarTerm :: Term1 -> Maybe Int
+maxVarTerm = foldr (max . Just) Nothing
+
+isGround :: Term1 -> Bool
+isGround = isNothing . maxVarTerm
 
 type VarSet = IntSet
 

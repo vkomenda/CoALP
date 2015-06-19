@@ -26,9 +26,6 @@ toBeUnified (NodeOper _ b) prefix =
      _ -> []
   ) `concatMap` (Array.assocs b)
 
-maxVarTree :: TreeOper1 -> Maybe Int
-maxVarTree = foldr (max . foldr (max . Just) Nothing) Nothing
-
 mguTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
 mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
   where
@@ -53,7 +50,7 @@ mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
          Right (Just ts)  -> (\(j, u) -> atBoundary (prefix ++ [i, j]) u
                              ) `concatMap` (zip [0..] ts)
          Left ToBeUnified -> [( prefix ++ [i]
-                              , clHead ((program p)!i) `mguMaybe` a)]
+                              , clHead (liftedClause i) `mguMaybe` a)]
          _ -> []
       ) `concatMap` (Array.assocs b)
 
@@ -74,8 +71,11 @@ mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
         o | isNothing ms = Right Nothing
           | otherwise    = Right $ Just tbs
         tbs = initTree (Array.bounds $ program p) <$>
-              (>>= subst (fromJust ms)) <$> clBody ((program p)!i)
+              (>>= subst (fromJust ms)) <$> clBody (liftedClause i)
     grow _ _ _ = error "matchSubtrees: grow error"
+
+    liftedClause i = liftVarsClause nVars $ (program p)!i
+    nVars = (+ 1) <$> maxVarTree t
 
 runResolution :: Program1 -> Term1 ->
                  (Either (Halt TreeOper1) (), Derivation TreeOper1)

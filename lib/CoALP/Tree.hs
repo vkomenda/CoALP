@@ -122,6 +122,9 @@ instance Traversable TreeOper where
   traverse f (NodeOper a b) =
     NodeOper <$> f a <*> (traverse.traverse.traverse.traverse.traverse) f b
 
+maxVarTree :: TreeOper1 -> Maybe Int
+maxVarTree = foldr (max . maxVarTerm) Nothing
+
 initTree :: (Int, Int) -> Term1 -> TreeOper1
 initTree bounds a =
   NodeOper a $ Array.listArray bounds (repeat $ Left ToBeMatched)
