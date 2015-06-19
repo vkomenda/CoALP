@@ -11,6 +11,7 @@ import CoALP.Clause
 import CoALP.Subst
 
 import Control.Applicative
+import Control.Arrow
 import Control.Monad.Trans.State
 import Data.Array (Array, (!), (//))
 import qualified Data.Array as Array
@@ -20,6 +21,7 @@ import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import Data.Graph.Inductive (Gr, Node, (&))
 import qualified Data.Graph.Inductive as Graph
+import Data.List (partition)
 import Data.Maybe
 import Data.Traversable
 
@@ -160,20 +162,12 @@ treeLoopsBy' rel termsAbove knownLoops (NodeOper a bun) =
             ) (foundLoops i ++ loops1) body
     onFibres (_, Left _) loops1 = loops1
 
-unguardedMatchLoops :: Program1 -> Int -> [(Term1, Term1)]
-unguardedMatchLoops p i =
-  treeLoopsBy (\a b -> not (a `recReduct` b)) $
-  matchTree p $
-  initTree (Array.bounds $ program p) (clHead c)
-  where
-    c = (program p)!i
-
 type Path = [Int]
 
 data Transition = Transition
                   {
                     transitionPath  :: Path
-                  , transitionSubst :: Maybe Subst1
+                  , transitionSubst :: Subst1
                   }
 
 data Derivation v =
@@ -264,47 +258,54 @@ queueBreadthFirst n (r, t) = do
      modify $ \st ->
        st { derivation = ([(r, n)], j, t, []) & derivation st }
 
-matchSubtrees :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
-matchSubtrees p t = go t []
+matchTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
+matchTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
   where
-    go :: TreeOper1 -> Path -> [(Transition, TreeOper1)]
-    go (NodeOper a b) prefix =
+    growSuccessful :: ([Path], [(Path, Subst1)]) -> [(Transition, TreeOper1)]
+    growSuccessful (pts, trs) =
+      (\(w, s) -> (Transition w s, grow (Just s) w $ noMatch pts)) <$> trs
+
+    noMatch :: [Path] -> TreeOper1
+    noMatch = foldr (grow Nothing) t
+
+    failedAndSuccessful :: [(a, Maybe b)] -> ([a], [(a, b)])
+    failedAndSuccessful =
+      (map fst *** map (id *** fromJust)) . partition (isNothing . snd)
+
+    atBoundary :: Path -> TreeOper1 -> [(Path, Maybe Subst1)]
+    atBoundary prefix (NodeOper a b) =
       (\(i, oper) ->
         case oper of
-         Right (Just ts)  -> (\(j, u) -> go u (prefix ++ [i, j])
+         Right (Just ts)  -> (\(j, u) -> atBoundary (prefix ++ [i, j]) u
                              ) `concatMap` (zip [0..] ts)
-         Left ToBeMatched -> [(Transition w ms, grow w t)]
-           where
-             w = prefix ++ [i]
-             ms = clHead c `matchMaybe` a
-             c = (program p)!i
-
-             grow :: Path -> TreeOper1 -> TreeOper1
-             grow (k:l:u) (NodeOper a0 b0) =
-               NodeOper a0 $ b0 // [(k,
-                                     case b0!k of
-                                      Right (Just tbs) ->
-                                        Right $ Just $
-                                        take l tbs ++ grow u (tbs!!l) :
-                                        drop (l+1) tbs
-                                      _ -> error "matchSubtrees: invalid path"
-                                           -- TODO: return
-                                    )]
-             grow [k] (NodeOper a0 b0) = NodeOper a0 $ b0 // [(k, o)]
-               where
-                 o :: Oper [TreeOper1]
-                 o | isNothing ms = Left ToBeUnified
-                   | otherwise    = Right $ Just tbs
-                 tbs = initTree (Array.bounds $ program p) <$>
-                       (>>= subst (fromJust ms)) <$> clBody c
-             grow _ _ = error "matchSubtrees: grow error"
-
+         Left ToBeMatched -> [( prefix ++ [i]
+                              , clHead ((program p)!i) `matchMaybe` a)]
          _ -> []
       ) `concatMap` (Array.assocs b)
 
+    grow :: Maybe Subst1 -> Path -> TreeOper1 -> TreeOper1
+    grow ms (i:k:u) (NodeOper a0 b0) =
+      NodeOper a0 $ b0 // [(i,
+                            case b0!i of
+                             Right (Just tbs) ->
+                               Right $ Just $
+                               take k tbs ++ grow ms u (tbs!!k) :
+                               drop (k+1) tbs
+                             _ -> error "matchSubtrees: invalid path"
+                                  -- TODO: return
+                           )]
+    grow ms [i] (NodeOper a0 b0) = NodeOper a0 $ b0 // [(i, o)]
+      where
+        o :: Oper [TreeOper1]
+        o | isNothing ms = Left ToBeUnified
+          | otherwise    = Right $ Just tbs
+        tbs = initTree (Array.bounds $ program p) <$>
+              (>>= subst (fromJust ms)) <$> clBody ((program p)!i)
+    grow _ _ _ = error "matchSubtrees: grow error"
+
 runMatch :: Program1 -> Term1 ->
             (Either (Halt [Term1Loop]) (), Derivation [Term1Loop])
-runMatch p a = runDerivation (Array.bounds $ program p) a (matchSubtrees p) h
+runMatch p a = runDerivation (Array.bounds $ program p) a (matchTransitions p) h
   where
     h t = if null l then Nothing else Just l
       where l = loops t

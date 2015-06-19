@@ -8,9 +8,11 @@ import CoALP.Subst
 import CoALP.Tree
 
 import Control.Applicative
+import Control.Arrow
 import Data.Array ((!), (//))
 import qualified Data.Array as Array
 import Data.Foldable
+import Data.List (partition)
 import Data.Maybe
 
 toBeUnified :: TreeOper1 -> Path -> [Path]
@@ -27,53 +29,59 @@ toBeUnified (NodeOper _ b) prefix =
 maxVarTree :: TreeOper1 -> Maybe Int
 maxVarTree = foldr (max . foldr (max . Just) Nothing) Nothing
 
-unifSubtrees :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
-unifSubtrees p t = go t []
+mguTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
+mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
   where
-    nVars = (+ 1) <$> maxVarTree t
-    go :: TreeOper1 -> Path -> [(Transition, TreeOper1)]
-    go (NodeOper a b) prefix =
+    growSuccessful :: ([Path], [(Path, Subst1)]) -> [(Transition, TreeOper1)]
+    growSuccessful (pts, trs) =
+      (\(w, s) ->
+        ( Transition w s
+        , grow (Just s) w $ (>>= subst s) <$> noMgu pts)
+      ) <$> trs
+
+    noMgu :: [Path] -> TreeOper1
+    noMgu = foldr (grow Nothing) t
+
+    failedAndSuccessful :: [(a, Maybe b)] -> ([a], [(a, b)])
+    failedAndSuccessful =
+      (map fst *** map (id *** fromJust)) . partition (isNothing . snd)
+
+    atBoundary :: Path -> TreeOper1 -> [(Path, Maybe Subst1)]
+    atBoundary prefix (NodeOper a b) =
       (\(i, oper) ->
         case oper of
-         Right (Just ts)  -> (\(j, u) -> go u (prefix ++ [i, j])
+         Right (Just ts)  -> (\(j, u) -> atBoundary (prefix ++ [i, j]) u
                              ) `concatMap` (zip [0..] ts)
-         Left ToBeUnified -> [(Transition w ms, grow w $ unifyTerms t)]
-           where
-             w = prefix ++ [i]
-             ms = clHead c `mguMaybe` a
-             c = liftVarsClause nVars $ (program p)!i
-
-             unifyTerms
-               | isNothing ms = id
-               | otherwise = fmap (>>= subst (fromJust ms))
-
-             grow :: Path -> TreeOper1 -> TreeOper1
-             grow (k:l:u) (NodeOper a0 b0) =
-               NodeOper a0 $ b0 // [(k,
-                                     case b0!k of
-                                      Right (Just tbs) ->
-                                        Right $ Just $
-                                        take l tbs ++ grow u (tbs!!l) :
-                                        drop (l+1) tbs
-                                      _ -> error "unifSubtrees: invalid path"
-                                    )]
-             grow [k] (NodeOper a0 b0) = NodeOper a0 $ b0 // [(k, o)]
-               where
-                 o :: Oper [TreeOper1]
-                 o | isNothing ms = Right Nothing
-                   | otherwise    = Right $ Just tbs
-                 tbs = initTree (Array.bounds $ program p) <$>
-                       (>>= subst (fromJust ms)) <$> clBody c
-             grow _ _ = error "unifSubtrees: grow error"
-
+         Left ToBeUnified -> [( prefix ++ [i]
+                              , clHead ((program p)!i) `mguMaybe` a)]
          _ -> []
       ) `concatMap` (Array.assocs b)
+
+    grow :: Maybe Subst1 -> Path -> TreeOper1 -> TreeOper1
+    grow ms (i:k:u) (NodeOper a0 b0) =
+      NodeOper a0 $ b0 // [(i,
+                            case b0!i of
+                             Right (Just tbs) ->
+                               Right $ Just $
+                               take k tbs ++ grow ms u (tbs!!k) :
+                               drop (k+1) tbs
+                             _ -> error "matchSubtrees: invalid path"
+                                  -- TODO: return
+                           )]
+    grow ms [i] (NodeOper a0 b0) = NodeOper a0 $ b0 // [(i, o)]
+      where
+        o :: Oper [TreeOper1]
+        o | isNothing ms = Right Nothing
+          | otherwise    = Right $ Just tbs
+        tbs = initTree (Array.bounds $ program p) <$>
+              (>>= subst (fromJust ms)) <$> clBody ((program p)!i)
+    grow _ _ _ = error "matchSubtrees: grow error"
 
 runResolution :: Program1 -> Term1 ->
                  (Either (Halt TreeOper1) (), Derivation TreeOper1)
 runResolution p a = runDerivation (Array.bounds $ program p) a f h
   where
-    f = unifSubtrees p . matchTree p
+    f = mguTransitions p . matchTree p
     h t = if successful t then Just t else Nothing
 
 successful :: TreeOper1 -> Bool
