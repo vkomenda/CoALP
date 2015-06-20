@@ -75,18 +75,18 @@ executable CoALPi
   else
     ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
 
-  build-depends:    base                 >= 4.6,
-                    CoALP                >= 0.0.1,
-                    containers           >= 0.5,
-                    mtl                  >= 2.1,
-                    old-locale,
-                    time                 >= 1.4,
-                    transformers         >= 0.3,
-                    parsec               >= 3.1,
-                    deepseq,
-                    process              >= 1.1,
-                    unordered-containers >= 0.2.3,
-                    optparse-applicative == 0.11.*
+  build-depends:    CoALP                >= 0.0.1
+                  , base                 >= 4.6
+                  , containers           >= 0.5
+                  , deepseq
+                  , mtl                  >= 2.1
+                  , old-locale
+                  , optparse-applicative == 0.11.*
+                  , parsec               >= 3.1
+                  , process              >= 1.1
+                  , time == 1.4.2
+                  , transformers         >= 0.3
+                  , unordered-containers >= 0.2.3
 
   default-extensions: BangPatterns
 
@@ -103,12 +103,12 @@ executable CoALP-benchmark-fibs
   else
     ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
 
-  build-depends:    base     >= 4.6,
-                    CoALP    >= 0.0.1,
-                    containers >= 0.5,
-                    deepseq  >= 1.3,
-                    time     >= 1.4,
-                    unordered-containers >= 0.2.3
+  build-depends:    CoALP    >= 0.0.1
+                  , base     >= 4.6
+                  , containers >= 0.5
+                  , deepseq  >= 1.3
+                  , time == 1.4.2
+                  , unordered-containers >= 0.2.3
 
   default-extensions: BangPatterns
 
@@ -125,12 +125,12 @@ executable CoALP-benchmark-automata
   else
     ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
 
-  build-depends:    base     >= 4.6,
-                    CoALP    >= 0.0.1,
-                    containers >= 0.5,
-                    deepseq  >= 1.3,
-                    time     >= 1.4,
-                    unordered-containers >= 0.2.3
+  build-depends:    CoALP    >= 0.0.1
+                  , base     >= 4.6
+                  , containers >= 0.5
+                  , deepseq  >= 1.3
+                  , time == 1.4.2
+                  , unordered-containers >= 0.2.3
 
   default-extensions: BangPatterns
 
@@ -149,9 +149,10 @@ test-suite CoALP-tests
 
   ghc-options:      -O2 -Wall -rtsopts -threaded
 
-  build-depends:    base        >= 4.6,
-                    CoALP       >= 0.0.1,
-                    containers  >= 0.5,
-                    directory,
-                    tasty       >= 0.3,
-                    tasty-hunit >= 0.2
+  build-depends:    CoALP       >= 0.0.1
+                  , base        >= 4.6
+                  , containers  >= 0.5
+                  , directory
+                  , tasty       >= 0.3
+                  , tasty-hunit >= 0.2
+                  , time == 1.4.2

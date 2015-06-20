@@ -21,8 +21,7 @@ import qualified Data.HashMap.Lazy as HashMap
 data IState = IState
               {
                 iProg  :: Program1                -- ^ logic clauses
-              , iGoals :: [Goal1]                 -- ^ goals
-              , iModes :: ModeAssoc               -- ^ mode associaltions
+              , iGoal  :: Goal1                   -- ^ goal
               , iNext  :: Int                     -- ^ the next variable
               , iDer   :: [[HashSet (ONode Occ)]] -- ^ derivations, one per each
                                                   -- goal

@@ -10,6 +10,7 @@ import CoALP.Tree
 import Control.Applicative
 import Control.Arrow
 import Data.Array ((!), (//))
+import Control.Monad.Trans.State
 import qualified Data.Array as Array
 import Data.Foldable
 import Data.List (partition)
@@ -83,6 +84,10 @@ runResolution p a = runDerivation (Array.bounds $ program p) a f h
   where
     f = mguTransitions p . matchTree p
     h t = if successful t then Just t else Nothing
+
+continueResolution :: Derivation TreeOper1 ->
+                      (Either (Halt TreeOper1) (), Derivation TreeOper1)
+continueResolution = runState derive
 
 successful :: TreeOper1 -> Bool
 successful = any hasSuccess . Array.elems . nodeBundleOper
