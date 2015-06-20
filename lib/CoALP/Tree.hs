@@ -213,43 +213,45 @@ data Halt v = HaltNodeNotFound Node
             | HaltConditionMet v
             deriving (Show, Eq)
 
-type Term1Loop = (Term1, Term1)
+haltConditionMet :: Halt v -> Maybe v
+haltConditionMet (HaltConditionMet v) = Just v
+haltConditionMet _ = Nothing
 
-success :: Either a ()
-success = Right ()
+type Term1Loop = (Term1, Term1)
 
 runDerivation :: (Int, Int) -> Term1 ->
                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
                  (TreeOper1 -> Maybe v) ->
-                 (Either (Halt v) (), Derivation v)
+                 (Maybe [Halt v], Derivation v)
 runDerivation bounds a f h = runState derive $ initDerivation bounds a f h
 
-derive :: State (Derivation v) (Either (Halt v) ())
+derive :: State (Derivation v) (Maybe [Halt v])
 derive = do
   d <- gets derivation
   q <- gets derivationQueue
   case q of
-   [] -> return success
+   [] -> return Nothing
    n:_ -> do
-     m <- gets derivationMaxSize
-     if n < m
-       then
-         case Graph.lab d n of
-          Nothing -> return $ Left $ HaltNodeNotFound n
-          Just t -> do
-            f <- gets derivationStep
-            sequence_ $ queueBreadthFirst n <$> f t
-            modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
-            h <- gets derivationHalt
-            case h t of
-             Nothing -> derive
-             Just v  -> return $ Left $ HaltConditionMet v
-       else return $ Left HaltMaxSizeExceeded
+     case Graph.lab d n of
+      Nothing -> return $ Just [HaltNodeNotFound n]
+      Just t -> do
+        f <- gets derivationStep
+        outs <- sequence $ queueBreadthFirst n <$> f t
+        modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
+        let leftouts = filter isJust outs
+        if null leftouts
+          then derive
+          else return $ sequence leftouts
 
-queueBreadthFirst :: Node -> (Transition, TreeOper1) -> State (Derivation v) ()
+queueBreadthFirst :: Node -> (Transition, TreeOper1) ->
+                     State (Derivation v) (Maybe (Halt v))
 queueBreadthFirst n (r, t) = do
   ts <- gets derivationTrees
-  case HashMap.lookup t ts of    -- FIXME: equiv. up to variable renaming
+  case HashMap.lookup t ts of  -- TODO (there are still some semantic copies):
+                               -- 1. relate trees with the same success subtrees
+                               -- 2. equiv. up to variable renaming
+                               -- 3. 1&2 possible using NF conversion before
+                               --    adding trees to derivation
    Nothing -> do
      d <- gets derivation
      let i = Graph.noNodes d
@@ -257,9 +259,18 @@ queueBreadthFirst n (r, t) = do
        st { derivation = ([(r, n)], i, t, []) & derivation st
           , derivationTrees = HashMap.insert t i $ derivationTrees st
           , derivationQueue = derivationQueue st ++ [i] }
+     h <- gets derivationHalt
+     case h t of
+      Nothing -> do
+        m <- gets derivationMaxSize
+        if n < m
+          then return Nothing
+          else return $ Just HaltMaxSizeExceeded
+      Just v  -> return $ Just $ HaltConditionMet v
    Just j -> do
      modify $ \st ->
        st { derivation = ([(r, n)], j, t, []) & derivation st }
+     return Nothing
 
 matchTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
 matchTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
@@ -307,7 +318,7 @@ matchTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
     grow _ _ _ = error "matchSubtrees: grow error"
 
 runMatch :: Program1 -> Term1 ->
-            (Either (Halt [Term1Loop]) (), Derivation [Term1Loop])
+            (Maybe [Halt [Term1Loop]], Derivation [Term1Loop])
 runMatch p a = runDerivation (Array.bounds $ program p) a (matchTransitions p) h
   where
     h t = if null l then Nothing else Just l
@@ -320,14 +331,15 @@ runMatch p a = runDerivation (Array.bounds $ program p) a (matchTransitions p) h
 --
 -- @matchLoops p@ equals @loops@ when the incremental loop search procedure
 -- halted with output @loops@, which may not necessarily contain the set of all
--- loops in the program @p@. If more loops need to be found, 'runMatch' can be
--- used iteratively by reapplication to the halted state to yield further loops
--- if there are any.
+-- loops in the program @p@. If more loops need to be found, 'runDerivation' can
+-- be used iteratively by reapplication to the halted state to yield further
+-- loops if there are any.
 matchLoops :: Program1 -> [Term1Loop]
-matchLoops p = concat $ findLoops <$> runMatch p <$> heads
+matchLoops p = concat $ findLoops <$> (fst . runMatch p) <$> heads
   where
-    findLoops (Left (HaltConditionMet v), _) = v
-    findLoops _ = []
+    findLoops Nothing = []
+    findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
+                            -- TODO: no duplicates
     heads = clHead <$> (Array.elems $ program p)
 
 guardedMatch :: Program1 -> Bool

@@ -79,14 +79,14 @@ mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
     nVars = (+ 1) <$> maxVarTree t
 
 runResolution :: Program1 -> Term1 ->
-                 (Either (Halt TreeOper1) (), Derivation TreeOper1)
+                 (Maybe [Halt TreeOper1], Derivation TreeOper1)
 runResolution p a = runDerivation (Array.bounds $ program p) a f h
   where
     f = mguTransitions p . matchTree p
     h t = if successful t then Just t else Nothing
 
 continueResolution :: Derivation TreeOper1 ->
-                      (Either (Halt TreeOper1) (), Derivation TreeOper1)
+                      (Maybe [Halt TreeOper1], Derivation TreeOper1)
 continueResolution = runState derive
 
 successful :: TreeOper1 -> Bool

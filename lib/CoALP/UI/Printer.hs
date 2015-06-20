@@ -47,13 +47,13 @@ instance (Show a) => Show (TreeOper a) where
   show t = goA [] t
     where
       goA prefix (NodeOper a b) =
-        show prefix ++ " AND " ++ show a ++ "\n" ++
+        "\n" ++ show prefix ++ " AND " ++ show a ++ "\n" ++
         (intercalate "\n" $
          (\(i, oper) -> show (prefix ++ [i]) ++ goB (prefix ++ [i]) oper) <$>
          Array.assocs b)
       goB _      (Right (Just [])) = " QED"
       goB prefix (Right (Just ts)) =
-        " OR\n" ++
+        " OR" ++
         (\(j, u) -> goA (prefix ++ [j]) u) `concatMap` (zip [0..] ts)
       goB _      (Right Nothing) = " NOT UNIFIABLE"
       goB _      (Left ToBeMatched) = " TO BE MATCHED"
