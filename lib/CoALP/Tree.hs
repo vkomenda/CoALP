@@ -185,7 +185,7 @@ data Derivation v =
     -- read-only environment - TODO
     -- | step function
   , derivationStep    :: TreeOper1 -> [(Transition, TreeOper1)]
-    -- | halting condition
+    -- | halting condition with output of type @v@
   , derivationHalt    :: TreeOper1 -> Maybe v
     -- | maximum number of nodes in the graph
   , derivationMaxSize :: Int
@@ -247,26 +247,32 @@ queueBreadthFirst :: Node -> (Transition, TreeOper1) ->
                      State (Derivation v) (Maybe (Halt v))
 queueBreadthFirst n (r, t) = do
   ts <- gets derivationTrees
+  -- check if a copy of the same tree has been searched already
   case HashMap.lookup t ts of  -- TODO (there are still some semantic copies):
                                -- 1. relate trees with the same success subtrees
                                -- 2. equiv. up to variable renaming
                                -- 3. 1&2 possible using NF conversion before
                                --    adding trees to derivation
    Nothing -> do
-     d <- gets derivation
-     let i = Graph.noNodes d
-     modify $ \st ->
-       st { derivation = ([(r, n)], i, t, []) & derivation st
-          , derivationTrees = HashMap.insert t i $ derivationTrees st
-          , derivationQueue = derivationQueue st ++ [i] }
-     h <- gets derivationHalt
-     case h t of
-      Nothing -> do
-        m <- gets derivationMaxSize
-        if n < m
-          then return Nothing
-          else return $ Just HaltMaxSizeExceeded
-      Just v  -> return $ Just $ HaltConditionMet v
+     m <- gets derivationMaxSize
+     if n < m
+       then do
+         d <- gets derivation
+         let i = Graph.noNodes d
+         modify $ \st ->
+           st { derivation = ([(r, n)], i, t, []) & derivation st
+              , derivationTrees = HashMap.insert t i $ derivationTrees st }
+         h <- gets derivationHalt
+         -- check the halting condition
+         case h t of
+          Just v  -> do
+            -- do not queue a halting node for further search
+            return $ Just $ HaltConditionMet v
+          Nothing -> do
+            modify $ \st ->
+              st { derivationQueue = derivationQueue st ++ [i] }
+            return Nothing
+       else return $ Just HaltMaxSizeExceeded
    Just j -> do
      modify $ \st ->
        st { derivation = ([(r, n)], j, t, []) & derivation st }
