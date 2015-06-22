@@ -10,6 +10,7 @@ module CoALP.Tests.Unit.Guards
 import CoALP
 import CoALP.UI
 
+import qualified Data.Array as Array
 import Data.List
 import Control.Applicative
 --import Control.Concurrent
@@ -41,8 +42,8 @@ programsUnguarded3 = programsDir ++ "/unguarded/Check3"
 
 onFile :: (Program1 -> Bool) -> FilePath -> TestTree
 onFile prop file = testCase file $ do
-  (cls, _, _) <- parseItemsFile file
-  prop (Pr cls) @?= True
+  (cls, _) <- parseItemsFile file
+  prop (Program $ Array.listArray (0, length cls - 1) cls) @?= True
 
 {-# NOINLINE testOnFiles #-}
 testOnFiles :: String -> (Program1 -> Bool) -> IO [FilePath] -> TestTree
@@ -65,7 +66,7 @@ tests =
 --                (not . guardedClauses)   $ logicInDir programsUnguarded1
 --  , testOnFiles "Programs unguarded in check 2 pass check 1"
 --                guardedClauses           $ logicInDir programsUnguarded2
-  , testOnFiles "Programs unguarded in check 2 fail check 2"
+    testOnFiles "Programs unguarded in check 2 fail check 2"
                 (not . guardedMatch)     $ logicInDir programsUnguarded2
 --  , testOnFiles "Programs unguarded in check 3 pass check 1"
 --                guardedClauses           $ logicInDir programsUnguarded3

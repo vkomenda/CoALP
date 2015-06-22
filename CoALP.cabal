@@ -92,48 +92,48 @@ executable CoALPi
   default-extensions: BangPatterns
 
 
-executable CoALP-benchmark-fibs
-  hs-source-dirs:   benchmarks
+--executable CoALP-benchmark-fibs
+--  hs-source-dirs:   benchmarks
 
-  main-is:          Fibs.hs
+--  main-is:          Fibs.hs
 
-  default-language: Haskell2010
+--  default-language: Haskell2010
 
-  if flag(eventlog)
-    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
-  else
-    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
+--  if flag(eventlog)
+--    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
+--  else
+--    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
 
-  build-depends:    CoALP    >= 0.0.1
-                  , base     >= 4.6
-                  , containers >= 0.5
-                  , deepseq  >= 1.3
-                  , time == 1.4.2
-                  , unordered-containers >= 0.2.3
+--  build-depends:    CoALP    >= 0.0.1
+--                  , base     >= 4.6
+--                  , containers >= 0.5
+--                  , deepseq  >= 1.3
+--                  , time == 1.4.2
+--                  , unordered-containers >= 0.2.3
 
-  default-extensions: BangPatterns
+--  default-extensions: BangPatterns
 
 
-executable CoALP-benchmark-automata
-  hs-source-dirs:   benchmarks
+--executable CoALP-benchmark-automata
+--  hs-source-dirs:   benchmarks
 
-  main-is:          Automata.hs
+--  main-is:          Automata.hs
 
-  default-language: Haskell2010
+--  default-language: Haskell2010
 
-  if flag(eventlog)
-    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
-  else
-    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
+--  if flag(eventlog)
+--    ghc-options:    -O2 -Wall -rtsopts -threaded -eventlog
+--  else
+--    ghc-options:    -O2 -Wall -rtsopts -threaded -auto-all -caf-all
 
-  build-depends:    CoALP    >= 0.0.1
-                  , base     >= 4.6
-                  , containers >= 0.5
-                  , deepseq  >= 1.3
-                  , time == 1.4.2
-                  , unordered-containers >= 0.2.3
+--  build-depends:    CoALP    >= 0.0.1
+--                  , base     >= 4.6
+--                  , containers >= 0.5
+--                  , deepseq  >= 1.3
+--                  , time == 1.4.2
+--                  , unordered-containers >= 0.2.3
 
-  default-extensions: BangPatterns
+--  default-extensions: BangPatterns
 
 
 test-suite CoALP-tests
@@ -150,8 +150,9 @@ test-suite CoALP-tests
 
   ghc-options:      -O2 -Wall -rtsopts -threaded
 
-  build-depends:    CoALP       >= 0.0.1
+  build-depends:    CoALP       >= 0.0.4
                   , base        >= 4.6
+                  , array       == 0.5.*
                   , containers  >= 0.5
                   , directory
                   , tasty       >= 0.3
