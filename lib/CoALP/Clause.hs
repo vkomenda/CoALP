@@ -48,6 +48,9 @@ type Goal1 = Goal String Int
 
 instance (NFData a, NFData b) => NFData (Goal a b)
 
+goalHead :: Term1
+goalHead = Fun "?" []
+
 varsClause1 :: Clause1 -> VarSet
 varsClause1 (h :- b) = foldMap varsTerm1 (h : b)
 

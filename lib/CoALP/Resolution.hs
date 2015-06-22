@@ -2,7 +2,7 @@ module CoALP.Resolution where
 
 import Prelude hiding (all, any, foldr, concatMap, sequence_)
 
-import CoALP.Term
+--import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
 import CoALP.Tree
@@ -78,9 +78,9 @@ mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
     liftedClause i = liftVarsClause nVars $ (program p)!i
     nVars = (+ 1) <$> maxVarTree t
 
-runResolution :: Program1 -> Term1 ->
+runResolution :: Program1 -> Goal1 ->
                  (Maybe [Halt TreeOper1], Derivation TreeOper1)
-runResolution p a = runDerivation (Array.bounds $ program p) a f h
+runResolution p g = runDerivation (Array.bounds $ program p) g f h
   where
     f = mguTransitions p . matchTree p
     h t = if successful t then Just t else Nothing

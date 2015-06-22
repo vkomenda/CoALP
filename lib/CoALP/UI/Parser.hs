@@ -55,7 +55,7 @@ forgetVars = putState . TPS HashMap.empty . tpsNext =<< getState
 type TermParser = ParsecT String TermParserSt Identity
 
 symbolP :: TermParser Char
-symbolP = oneOf "!#$%&|*+-/<=>?@^_~"
+symbolP = oneOf "!#$%&|*+-/<=>@^_~"
 
 identRest :: TermParser String
 identRest = many (letter <|> symbolP <|> digit)

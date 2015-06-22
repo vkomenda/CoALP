@@ -191,11 +191,11 @@ data Derivation v =
   , derivationMaxSize :: Int
   }
 
-initDerivation :: (Int, Int) -> Term1 ->
+initDerivation :: (Int, Int) -> Goal1 ->
                   (TreeOper1 -> [(Transition, TreeOper1)]) ->
                   (TreeOper1 -> Maybe v) ->
                   Derivation v
-initDerivation bounds a f h =
+initDerivation bounds (Goal g) f h =
   Derivation
   {
     derivation        = Graph.mkGraph [(0, t)] []
@@ -206,7 +206,8 @@ initDerivation bounds a f h =
   , derivationMaxSize = 10000
   }
   where
-    t = initTree bounds a
+    t = NodeOper goalHead $ Array.listArray bounds $ repeat $ Right $ Just ts
+    ts = initTree bounds <$> g
 
 data Halt v = HaltNodeNotFound Node
             | HaltMaxSizeExceeded
@@ -219,11 +220,11 @@ haltConditionMet _ = Nothing
 
 type Term1Loop = (Term1, Term1)
 
-runDerivation :: (Int, Int) -> Term1 ->
+runDerivation :: (Int, Int) -> Goal1 ->
                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
                  (TreeOper1 -> Maybe v) ->
                  (Maybe [Halt v], Derivation v)
-runDerivation bounds a f h = runState derive $ initDerivation bounds a f h
+runDerivation bounds g f h = runState derive $ initDerivation bounds g f h
 
 derive :: State (Derivation v) (Maybe [Halt v])
 derive = do
@@ -323,13 +324,13 @@ matchTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
               (>>= subst (fromJust ms)) <$> clBody ((program p)!i)
     grow _ _ _ = error "matchSubtrees: grow error"
 
-runMatch :: Program1 -> Term1 ->
+runMatch :: Program1 -> Goal1 ->
             (Maybe [Halt [Term1Loop]], Derivation [Term1Loop])
-runMatch p a = runDerivation (Array.bounds $ program p) a (matchTransitions p) h
+runMatch p g = runDerivation (Array.bounds $ program p) g (matchTransitions p) h
   where
     h t = if null l then Nothing else Just l
       where l = loops t
-    loops = treeLoopsBy $ \a1 a2 -> not (a1 `recReduct` a2)
+    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && not (a1 `recReduct` a2)
 
 -- | Implementation of Tier 2 guardedness check.
 --
@@ -341,7 +342,7 @@ runMatch p a = runDerivation (Array.bounds $ program p) a (matchTransitions p) h
 -- be used iteratively by reapplication to the halted state to yield further
 -- loops if there are any.
 matchLoops :: Program1 -> [Term1Loop]
-matchLoops p = concat $ findLoops <$> (fst . runMatch p) <$> heads
+matchLoops p = findLoops $ fst $ runMatch p $ Goal heads
   where
     findLoops Nothing = []
     findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs

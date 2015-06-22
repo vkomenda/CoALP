@@ -13,11 +13,8 @@ import System.Locale
 import System.Process
 import Control.Exception
 import Control.Monad
-import Control.Applicative ( (<$>) )
+--import Control.Applicative ( (<$>) )
 import Control.Arrow
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as HashSet
-import qualified Data.HashMap.Lazy as HashMap
 
 -- | Type of interpreter state.
 data IState = IState
@@ -108,8 +105,8 @@ actSearch st@IState{iProg = Nothing} = do
 actSearch st@IState{iGoals = []} = do
   putStrLn "There is no goal"
   return st
-actSearch st@IState{iProg = Just p, iGoals = (Goal (g:_)):_} = do
-  let (r, d) = runResolution p g  -- FIXME: single goal term only?
+actSearch st@IState{iProg = Just p, iGoals = g:_} = do
+  let (r, d) = runResolution p g
   putStrLn $ show r  -- FIXME: pretty print
   return $ st {iDer = Just d}
 
