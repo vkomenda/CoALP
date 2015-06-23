@@ -1,6 +1,6 @@
 module CoALP.Resolution where
 
-import Prelude hiding (all, any, foldr, concatMap, sequence_)
+import Prelude hiding (all, any, elem, foldr, concat, concatMap, sequence_)
 
 import CoALP.Term
 import CoALP.Clause
@@ -13,6 +13,11 @@ import Data.Array ((!), (//))
 import Control.Monad.Trans.State
 import qualified Data.Array as Array
 import Data.Foldable
+import qualified Data.Graph.Inductive as Graph
+import qualified Data.HashMap.Lazy as HashMap
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
+import Data.Ix (range)
 import Data.List (partition)
 import Data.Maybe
 
@@ -102,7 +107,12 @@ final = all finalB . Array.elems . nodeBundleOper
     finalB (Right Nothing)   = True
     finalB _                 = False
 
-data GuardCxt = GuardCxt Int [(Path, Term1)]
+data GuardCxt = GuardCxt
+                {
+                  guardCxtClause :: Int
+                , guardCxtSet    :: HashSet (Path, Term1)
+                }
+              deriving (Eq)
 
 transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, GuardCxt)]
 transitionGuards p t = ctx <$> mguTransitions p t
@@ -111,16 +121,67 @@ transitionGuards p t = ctx <$> mguTransitions p t
                           let a  = t  `termAt` init w
                               a1 = t1 `termAt` init w
                           in
-                           recVarReducts a1 a
+                           HashSet.fromList $ recVarReducts a1 a
                   )
       where
         w = transitionPath r
 
-termAt :: TreeOper1 -> Path -> Term1
+termAt :: TreeOper a -> Path -> a
 termAt (NodeOper a _) [] = a
 termAt (NodeOper _ b) (i:j:w) = termAt (nthOper j (b!i)) w
-termAt _ w = error $ "termAt: invalid path " ++ show w
+termAt _ w = error $ "termAt: invalid suffix " ++ show w
 
 nthOper :: Int -> Oper [a] -> a
 nthOper n (Right (Just ts)) = ts!!n
 nthOper n _ = error $ "nthOper: missing term " ++ show n
+
+singletonDerivation :: TreeOper1 ->
+                       (TreeOper1 -> [(Transition, TreeOper1)]) ->
+                       (TreeOper1 -> Maybe v) ->
+                       Derivation v
+singletonDerivation t f h =
+  Derivation
+  {
+    derivation        = Graph.mkGraph [(0, t)] []
+  , derivationTrees   = HashMap.singleton t 0
+  , derivationQueue   = [0]
+  , derivationStep    = f
+  , derivationHalt    = h
+  , derivationMaxSize = 1000
+  }
+
+runSingletonMatch :: Program1 -> TreeOper1 ->
+                     (Maybe [Halt [Term1Loop]], Derivation [Term1Loop])
+runSingletonMatch p t =
+  runState derive $ singletonDerivation t (matchTransitions p) h
+  where
+    h t1 = if null l then Nothing else Just l
+      where l = loops t1
+    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && not (a1 `recReduct` a2)
+
+resolutionLoops :: Program1 -> [Term1Loop]
+resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
+  where
+    go :: [GuardCxt] -> TreeOper1 -> [Term1Loop]
+    go gcxt t
+      | not (null loops) = loops
+      | otherwise = concat $ (\(_, t1, c) ->
+                               if c `elem` gcxt
+                               then []
+                               else go (c : gcxt) t1
+                             ) <$> guards
+      where
+        guards = (transitionGuards liftedP . matchTree liftedP) t
+        nVars = (+ 1) <$> maxVarTree t
+        loops = findLoops $ fst $ runSingletonMatch liftedP t
+        liftedP = liftedBy nVars
+    findLoops Nothing = []
+    findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
+    goals = (\h -> Goal [h]) <$> heads
+    heads = clHead <$> (Array.elems $ program p)
+    liftedBy n = Program $ Array.listArray bounds $ liftedClause n <$> range bounds
+    liftedClause n i = liftVarsClause n $ (program p)!i
+    bounds = Array.bounds $ program p
+
+guardedResolution :: Program1 -> Bool
+guardedResolution = null . resolutionLoops

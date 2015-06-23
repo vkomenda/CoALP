@@ -195,7 +195,7 @@ initDerivation :: (Int, Int) -> Goal1 ->
                   (TreeOper1 -> [(Transition, TreeOper1)]) ->
                   (TreeOper1 -> Maybe v) ->
                   Derivation v
-initDerivation bounds (Goal g) f h =
+initDerivation bounds g f h =
   Derivation
   {
     derivation        = Graph.mkGraph [(0, t)] []
@@ -205,9 +205,12 @@ initDerivation bounds (Goal g) f h =
   , derivationHalt    = h
   , derivationMaxSize = 10000
   }
-  where
-    t = NodeOper goalHead $ Array.listArray (0, 0) $ repeat $ Right $ Just ts
-    ts = initTree bounds <$> g
+  where t = goalTree bounds g
+
+goalTree :: (Int, Int) -> Goal1 -> TreeOper1
+goalTree bounds (Goal g') =
+  NodeOper goalHead $ Array.listArray (0, 0) $ repeat $ Right $ Just $
+  initTree bounds <$> g'
 
 data Halt v = HaltNodeNotFound Node
             | HaltMaxSizeExceeded

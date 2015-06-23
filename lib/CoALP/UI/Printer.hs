@@ -11,6 +11,7 @@ import Data.List (intercalate)
 import Control.Applicative ( (<$>) )
 import qualified Data.Array as Array
 import qualified Data.HashMap.Lazy as HashMap
+import qualified Data.HashSet as HashSet
 
 -- | A type class to avoid quotes on strings that 'show' introduces. Instances
 -- of 'ShowNoQ' on types except for 'String' can be equivalent to the usual
@@ -62,3 +63,7 @@ instance (Show a) => Show (TreeOper a) where
 instance Show Transition where
   show r =
     "(" ++ show (transitionPath r) ++ " <= " ++ show (transitionSubst r) ++ ")"
+
+instance Show GuardCxt where
+  show (GuardCxt i gs) = "(" ++ show i ++ " :gc: " ++
+                         show (HashSet.toList gs) ++ ")"
