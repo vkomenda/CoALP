@@ -206,7 +206,7 @@ initDerivation bounds (Goal g) f h =
   , derivationMaxSize = 10000
   }
   where
-    t = NodeOper goalHead $ Array.listArray bounds $ repeat $ Right $ Just ts
+    t = NodeOper goalHead $ Array.listArray (0, 0) $ repeat $ Right $ Just ts
     ts = initTree bounds <$> g
 
 data Halt v = HaltNodeNotFound Node
@@ -342,7 +342,7 @@ runMatch p g = runDerivation (Array.bounds $ program p) g (matchTransitions p) h
 -- be used iteratively by reapplication to the halted state to yield further
 -- loops if there are any.
 matchLoops :: Program1 -> [Term1Loop]
-matchLoops p = findLoops $ fst $ runMatch p $ Goal heads
+matchLoops p = (findLoops . fst . runMatch p . Goal . \h -> [h]) `concatMap` heads
   where
     findLoops Nothing = []
     findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs

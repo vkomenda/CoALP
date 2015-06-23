@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 module CoALP.Clause where
 
 import CoALP.Term as Term
@@ -42,7 +43,7 @@ clBodyI :: Program a b -> Int -> [(Int, Term a b)]
 clBodyI p i = zip [0..] (clBody $ (program p)!i)
 
 newtype Goal a b = Goal {goal :: [Term a b]}
-                 deriving (Eq)
+                 deriving (Eq, Functor)
 
 type Goal1 = Goal String Int
 

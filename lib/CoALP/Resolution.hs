@@ -2,7 +2,7 @@ module CoALP.Resolution where
 
 import Prelude hiding (all, any, foldr, concatMap, sequence_)
 
---import CoALP.Term
+import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
 import CoALP.Tree
@@ -101,3 +101,26 @@ final = all finalB . Array.elems . nodeBundleOper
     finalB (Right (Just ts)) = all final ts
     finalB (Right Nothing)   = True
     finalB _                 = False
+
+data GuardCxt = GuardCxt Int [(Path, Term1)]
+
+transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, GuardCxt)]
+transitionGuards p t = ctx <$> mguTransitions p t
+  where
+    ctx (r, t1) = (r, t1, GuardCxt (last w) $
+                          let a  = t  `termAt` init w
+                              a1 = t1 `termAt` init w
+                          in
+                           recVarReducts a1 a
+                  )
+      where
+        w = transitionPath r
+
+termAt :: TreeOper1 -> Path -> Term1
+termAt (NodeOper a _) [] = a
+termAt (NodeOper _ b) (i:j:w) = termAt (nthOper j (b!i)) w
+termAt _ w = error $ "termAt: invalid path " ++ show w
+
+nthOper :: Int -> Oper [a] -> a
+nthOper n (Right (Just ts)) = ts!!n
+nthOper n _ = error $ "nthOper: missing term " ++ show n

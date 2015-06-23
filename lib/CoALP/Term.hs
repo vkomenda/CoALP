@@ -4,7 +4,7 @@
 
 module CoALP.Term where
 
-import Prelude hiding (foldr, foldl, any)
+import Prelude hiding (foldr, foldl, any, concatMap)
 
 import Control.DeepSeq
 import Data.Hashable
@@ -12,7 +12,7 @@ import           Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import           Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
-import Data.Maybe (isNothing)
+import Data.Maybe
 import Data.Foldable
 import Data.Traversable
 import Control.Monad
@@ -144,3 +144,13 @@ recReduct (Fun c []) u@(Fun _ (_:_)) =
 recReduct (Fun f ts) (Fun g us) | f == g =
   any (uncurry recReduct) (zip ts us)
 recReduct _ _ = False
+
+-- | Recursive variable reduction measures with positions in the first term.
+recVarReducts :: (Eq a, Eq b) => Term a b -> Term a b -> [([Int], Term a b)]
+recVarReducts = go []
+  where
+    go w (Var i) u@(Fun _ (_:_)) = if any (== i) u then [(w, u)] else []
+    go w (Fun f ts) (Fun g us)
+      | f == g =
+        (\(t, u, i) -> go (w ++ [i]) t u) `concatMap` zip3 ts us [0..]
+    go _ _ _ = []
