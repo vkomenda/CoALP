@@ -1,6 +1,6 @@
 # CoALP
 
-:copyright: 2014: CoALP project, University of Dundee
+:copyright: 2014-2015: CoALP project, University of Dundee
 
 License: LGPL v3
 
@@ -27,3 +27,10 @@ Run from the project directory:
 Run from the project directory:
 
 > cabal install --enable-tests
+
+Then you can run the test suite `CoALP-tests` from its install location.
+
+
+### Usage instructions
+
+Please refer to the help in `CoALPi -h`.

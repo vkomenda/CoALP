@@ -40,12 +40,13 @@ actLoad st = do
   fileName <- readLine "Type the file name and then press Enter> "
   (cs, gs) <- parseItemsFile fileName
   let pr = Program $ Array.listArray (0, length cs - 1) cs
-  if guardedMatch pr  -- FIXME: guarded
+      uLoops = matchLoops pr
+  if null uLoops
     then
     do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs
        return $ st {iProg = Just pr, iGoals = gs}
     else
-    do putStrLn $ "The given program is unguarded\n"
+    do putStrLn $ "The given program is unguarded.\n"
        return st
     -- TODO? 1) Retrieve the next variable from the parser state or disallow
     -- separate changes to the program or goals. The latter is more preferable.
@@ -55,12 +56,13 @@ actLoadFromTerminal :: IState -> String -> IO IState
 actLoadFromTerminal st fileName = do
   (cs, gs) <- parseItemsFile fileName
   let pr = Program $ Array.listArray (0, length cs - 1) cs
-  if guardedMatch pr  -- FIXME: guarded
+      uLoops = resolutionLoops pr
+  if null uLoops
     then
     do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs
        return $ st {iProg = Just pr, iGoals = gs}
     else
-    do putStrLn $ "The given program is unguarded\n"
+    do putStrLn $ "The given program is unguarded.\n"
        return st
 
 actProgram :: IState -> IO IState
@@ -74,12 +76,15 @@ actProgram st = do
       Left e  -> print e >> return (iProg st, tps0)
       Right (p, s) -> return (Just p, s)
   putStrLn $ "\n" ++ show pr
-  if isJust pr && guardedMatch (fromJust pr)  -- FIXME: guarded
-    then
-      return $ st {iProg = pr, iNext = tpsNext tps}
-    else do
-      putStrLn $ "\nThe given program is unguarded\n"
-      return st
+  if isJust pr
+    then do
+      let uLoops = resolutionLoops (fromJust pr)
+      if null uLoops
+        then return $ st {iProg = pr, iNext = tpsNext tps}
+        else do
+          putStrLn $ "\nThe given program is unguarded.\n"
+          return st
+    else return st
 
 actGoal :: IState -> IO IState
 actGoal st = do
@@ -199,7 +204,7 @@ nonInteractive op = do
       st           = iState0 {iProg = Just pr, iGoals = gs}
       (grdLevel, grdCont) = (abs &&& (>= 0)) $ optGuards op
       grd = all (\f -> f pr) $
-            take grdLevel [const True {-FIXME-}, guardedMatch, undefined]
+            take grdLevel [const True {-FIXME-}, guardedMatch, guardedResolution]
   when (grdLevel /= 0 && optVerbose op > 0) $
     putStrLn $ "Level " ++ show grdLevel ++ " guardedness check " ++
                if grd then "PASSED." else "FAILED."

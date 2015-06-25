@@ -149,16 +149,16 @@ matchTree p (NodeOper a b) =
 type Rel a = a -> a -> Bool
 
 -- | Computation of the set of loops for the guardedness check 2.
-treeLoopsBy :: (Eq a, Hashable a) => Rel a -> TreeOper a -> [(a, a)]
+treeLoopsBy :: (Eq a, Hashable a) => Rel a -> TreeOper a -> [(Int, a, a)]
 treeLoopsBy rel = treeLoopsBy' rel [] []
 
-treeLoopsBy' :: (Eq a, Hashable a) => Rel a -> [(Int, a)] -> [(a, a)] ->
-                TreeOper a -> [(a, a)]
+treeLoopsBy' :: (Eq a, Hashable a) => Rel a -> [(Int, a)] -> [(Int, a, a)] ->
+                TreeOper a -> [(Int, a, a)]
 treeLoopsBy' rel termsAbove knownLoops (NodeOper a bun) =
   foldr onFibres knownLoops (Array.assocs bun)
   where
     related i = filter (\(j, b) -> i == j && a `rel` b) $ termsAbove
-    foundLoops i = (\(_, b) -> (b, a)) <$> related i
+    foundLoops i = (\(_, b) -> (i, b, a)) <$> related i
     onFibres (_, Right Nothing) loops1 = loops1
     onFibres (i, Right (Just body)) loops1 =
       foldr (\b loops2 -> treeLoopsBy' rel ((i, a) : termsAbove) loops2 b
@@ -221,7 +221,7 @@ haltConditionMet :: Halt v -> Maybe v
 haltConditionMet (HaltConditionMet v) = Just v
 haltConditionMet _ = Nothing
 
-type Term1Loop = (Term1, Term1)
+type Term1Loop = (Int, Term1, Term1)
 
 runDerivation :: (Int, Int) -> Goal1 ->
                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
@@ -333,7 +333,7 @@ runMatch p g = runDerivation (Array.bounds $ program p) g (matchTransitions p) h
   where
     h t = if null l then Nothing else Just l
       where l = loops t
-    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && not (a1 `recReduct` a2)
+    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)
 
 -- | Implementation of Tier 2 guardedness check.
 --

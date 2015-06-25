@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 module CoALP.Resolution where
 
 import Prelude hiding (all, any, elem, foldr, concat, concatMap, sequence_)
@@ -107,33 +108,42 @@ final = all finalB . Array.elems . nodeBundleOper
     finalB (Right Nothing)   = True
     finalB _                 = False
 
+data Guard = Guard
+             {
+               guardClause   :: Int
+             , guardMeasures :: HashSet Term1
+             }
+             deriving (Eq)
+
 data GuardCxt = GuardCxt
                 {
-                  guardCxtClause :: Int
-                , guardCxtSet    :: HashSet (Path, Term1)
+                  guardCxtClause   :: Int
+                , guardCxtMeasures :: HashSet (Path, Term1)
                 }
               deriving (Eq)
 
 transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, GuardCxt)]
-transitionGuards p t = ctx <$> mguTransitions p t
+transitionGuards p t = cxt <$> mguTransitions p tMatched
   where
-    ctx (r, t1) = (r, t1, GuardCxt (last w) $
-                          let a  = t  `termAt` init w
-                              a1 = t1 `termAt` init w
+    tMatched = matchTree p t
+    cxt (r, t1) = (r, t1, GuardCxt (last w) $
+                          let a  =           t        `termAt` init w
+                              a0 = fromJust (tMatched `termAt` init w)
+                              a1 = fromJust (t1       `termAt` init w)
                           in
-                           HashSet.fromList $ recVarReducts a1 a
+                           HashSet.fromList $ recVarReducts a1 $ maybe a0 id a
                   )
       where
         w = transitionPath r
 
-termAt :: TreeOper a -> Path -> a
-termAt (NodeOper a _) [] = a
-termAt (NodeOper _ b) (i:j:w) = termAt (nthOper j (b!i)) w
-termAt _ w = error $ "termAt: invalid suffix " ++ show w
+termAt :: TreeOper a -> Path -> Maybe a
+termAt (NodeOper a _) []      = Just a
+termAt (NodeOper _ b) (i:j:w) = nthOper j (b!i) >>= (`termAt` w)
+termAt _              w       = Nothing
 
-nthOper :: Int -> Oper [a] -> a
-nthOper n (Right (Just ts)) = ts!!n
-nthOper n _ = error $ "nthOper: missing term " ++ show n
+nthOper :: Int -> Oper [a] -> Maybe a
+nthOper n (Right (Just ts)) = Just (ts!!n)
+nthOper n _                 = Nothing
 
 singletonDerivation :: TreeOper1 ->
                        (TreeOper1 -> [(Transition, TreeOper1)]) ->
@@ -147,7 +157,7 @@ singletonDerivation t f h =
   , derivationQueue   = [0]
   , derivationStep    = f
   , derivationHalt    = h
-  , derivationMaxSize = 1000
+  , derivationMaxSize = 10000
   }
 
 runSingletonMatch :: Program1 -> TreeOper1 ->
@@ -157,21 +167,43 @@ runSingletonMatch p t =
   where
     h t1 = if null l then Nothing else Just l
       where l = loops t1
-    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && not (a1 `recReduct` a2)
+    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)
 
 resolutionLoops :: Program1 -> [Term1Loop]
 resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
   where
     go :: [GuardCxt] -> TreeOper1 -> [Term1Loop]
-    go gcxt t
+    go gcxts t
       | not (null loops) = loops
-      | otherwise = concat $ (\(_, t1, c) ->
-                               if c `elem` gcxt
-                               then []
-                               else go (c : gcxt) t1
-                             ) <$> guards
+      | otherwise = concat $ (\(_, u, c) ->
+                               let gcxt = guardCxt c u in
+                               if HashSet.null $ guardCxtMeasures gcxt
+                               then go gcxts u
+                               else
+                                 if gcxt `elem` gcxts
+                                 then []
+                                 else go (gcxt : gcxts) u
+                             ) <$> clauseProj
       where
-        guards = (transitionGuards liftedP . matchTree liftedP) t
+        clauseProj :: [(Transition, TreeOper1, GuardCxt)]
+        clauseProj = transitionGuards liftedP t
+        loopGuards :: TreeOper1 -> [(Int, HashSet Term1)]
+        loopGuards = undefined -- fmap matchGuards . guardedLoops
+        stepGuards i u = filter ((== i) . fst) $ loopGuards u
+        stepGuardTerms :: Int -> TreeOper1 -> HashSet Term1
+        stepGuardTerms i u = HashSet.unions $ snd <$> stepGuards i u
+        guardCxt :: GuardCxt -> TreeOper1 -> GuardCxt
+        guardCxt (GuardCxt i gs) u =
+          GuardCxt i $
+          HashSet.fromList $ filter
+          (\g -> any (not . null . recVarReducts (snd g)) $
+                 HashSet.toList $ stepGuardTerms i u
+          ) $ HashSet.toList gs
+{-
+        matchGuards (i, b, a) = (i,) <$> snd <$> a `recVarReducts` b
+--        guardedLoops :: [(Int, Term1, Term1)]
+        guardedLoops = treeLoopsBy $ \x y -> y /= goalHead && x `recReduct` y
+-}
         nVars = (+ 1) <$> maxVarTree t
         loops = findLoops $ fst $ runSingletonMatch liftedP t
         liftedP = liftedBy nVars

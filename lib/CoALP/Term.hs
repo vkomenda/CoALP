@@ -128,22 +128,23 @@ labelSubterms = go [] where
 reduct :: Eq a => Term a b -> Term a b -> Bool
 reduct (Var _)    (Fun _ (_:_)) = True
 reduct (Fun _ []) (Fun _ (_:_)) = True
-reduct (Fun f ts) (Fun g us) | f == g =
-  any (uncurry reduct) (zip ts us)
+reduct (Fun f ts) (Fun g us) | f == g = any (uncurry reduct) (zip ts us)
 reduct _ _ = False
 
--- | Recursive term reduct. For any term @t@, @recReduct t@ is a subset of
--- @reduct t@.
-recReduct :: (Eq a, Eq b) => Term a b -> Term a b -> Bool
-recReduct (Var i)    u@(Fun _ (_:_)) = any (== i) u
-recReduct (Fun c []) u@(Fun _ (_:_)) =
-  foldrf (\ab -> (&&) (samecon ab)) False u
+-- | Recursive variable or constant reduction measures with positions in the
+-- first term.
+recReducts :: (Eq a, Eq b) => Term a b -> Term a b -> [([Int], Term a b)]
+recReducts = go []
   where
-    samecon (Left d) = d == c
-    samecon _        = False
-recReduct (Fun f ts) (Fun g us) | f == g =
-  any (uncurry recReduct) (zip ts us)
-recReduct _ _ = False
+    go w (Var i)    u@(Fun _ (_:_)) = if any (== i) u then [(w, u)] else []
+    go w (Fun c []) u@(Fun _ (_:_)) = foldrf ((++) . samecon) [] u
+      where
+        samecon (Left d) | d == c = [(w, u)]
+        samecon _                 = []
+    go w (Fun f ts) (Fun g us)
+      | f == g =
+        (\(t, u, i) -> go (w ++ [i]) t u) `concatMap` zip3 ts us [0..]
+    go _ _ _ = []
 
 -- | Recursive variable reduction measures with positions in the first term.
 recVarReducts :: (Eq a, Eq b) => Term a b -> Term a b -> [([Int], Term a b)]

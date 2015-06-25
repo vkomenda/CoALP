@@ -62,8 +62,14 @@ tests =
   [
     testOnFiles "Programs unguarded in tier 2 check fail it"
                 (not . guardedMatch)      $ logicInDir programsUnguarded2
+  , testOnFiles "Programs unguarded in tier 2 check fail tier 3 check"
+                (not . guardedResolution) $ logicInDir programsUnguarded2
   , testOnFiles "Programs unguarded in tier 3 check pass tier 2 check"
                 guardedMatch              $ logicInDir programsUnguarded3
-  , testOnFiles "Programs unguarded in tier 3 check 3 fail it"
+  , testOnFiles "Programs unguarded in tier 3 check fail it"
                 (not . guardedResolution) $ logicInDir programsUnguarded3
+  , testOnFiles "Guarded programs pass tier 2 check"
+                guardedMatch              $ logicInDir programsGuarded
+  , testOnFiles "Guarded programs pass tier 3 check"
+                guardedResolution         $ logicInDir programsGuarded
   ]

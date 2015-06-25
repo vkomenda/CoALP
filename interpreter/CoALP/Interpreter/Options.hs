@@ -49,8 +49,8 @@ parseCmdOption = CmdOptions
     <*> option auto
          ( long "guards"
         <> short 'a'
-        <> value 2
-        <> help ("Guardedness check level: 0 (no check), 1 (clause), " ++
+        <> value 3
+        <> help ("Guardedness check level: 0 (no check), 1 (placeholder), " ++
                  "2 (program), 3 (derivation). Add the minus sign to run " ++
                  "guardedness checks alone, without a following derivation.") )
     <*> option auto
