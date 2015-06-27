@@ -150,7 +150,7 @@ recReducts = go []
 varReducts :: (Eq a, Eq b) => Term a b -> Term a b -> [([Int], Term a b)]
 varReducts = go []
   where
-    go w (Var i) u@(Fun _ (_:_)) = [(w, u)]
+    go w (Var _) u@(Fun _ (_:_)) = [(w, u)]
     go w (Fun f ts) (Fun g us)
       | f == g =
         (\(t, u, i) -> go (w ++ [i]) t u) `concatMap` zip3 ts us [0..]

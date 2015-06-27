@@ -127,8 +127,8 @@ transitionGuards p t = cxt <$> mguTransitions p t
       where
         w        = transitionPath r
         (v, i)   = (init &&& last) w
-        aMatch   = fromJust (t      `termAt` v)
-        aMgu     = fromJust (tMgu   `termAt` v)
+        aMatch   = fromJust (t    `termAt` v)
+        aMgu     = fromJust (tMgu `termAt` v)
         measures = HashSet.fromList $ snd <$> varReducts aMatch aMgu
         subterms = nonVarSubterms $ clHead ((program p)!i)
         clProj   = HashSet.unions $
@@ -141,18 +141,18 @@ guardCxt :: GuardCxt -> TreeOper1 -> GuardCxt
 guardCxt (GuardCxt i gs) t =
   GuardCxt i $
   HashSet.fromList $ filter
-  (\g -> any (isJust . matchMaybe (snd g)) $
-         HashSet.toList $ stepGuardTerms
+  (\g -> any (isJust . matchMaybe (snd g)) $ HashSet.toList $ loopGuardTerms
   ) $ HashSet.toList gs
   where
-    stepGuardTerms :: HashSet Term1
-    stepGuardTerms = HashSet.unions $ snd <$> stepGuards
-    stepGuards = filter ((== i) . fst) $ loopGuards
+    loopGuardTerms :: HashSet Term1
+    loopGuardTerms = HashSet.unions $ snd <$> loopGuards
     loopGuards :: [(Int, HashSet Term1)]
-    loopGuards = matchGuards <$> guardedLoops
-    matchGuards :: Term1Loop -> (Int, HashSet Term1)
-    matchGuards (i, b, a) = (i, HashSet.fromList $ snd <$> a `recVarReducts` b)
-    guardedLoops = treeLoopsBy haveGuards t
+    loopGuards = loopGuard <$> guardedLoops
+    loopGuard :: Term1Loop -> (Int, HashSet Term1)
+    loopGuard (j, b, a) = (j, HashSet.fromList $ snd <$> a `recVarReducts` b)
+    guardedLoops :: [Term1Loop]
+    guardedLoops = (\(j,_,_) -> i == j) `filter` treeLoopsBy haveGuards t
+    haveGuards :: Rel Term1
     haveGuards x y = y /= goalHead && not (null (x `recVarReducts` y))
 
 termAt :: TreeOper a -> Path -> Maybe a
@@ -179,8 +179,8 @@ resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
             if gcxt `elem` gcxts
             then []
             else go (gcxt : gcxts) u
-          where gcxt = guardCxt c t
-        clauseProj :: [(Transition, TreeOper1, GuardCxt)]
+          where
+            gcxt = guardCxt c tMatch
         clauseProj = transitionGuards p tMatch
         tMatch = matchTree p t
         loops = findLoops $ fst $ runMatch p t

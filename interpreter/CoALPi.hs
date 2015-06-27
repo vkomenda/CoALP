@@ -123,8 +123,7 @@ actSave st@IState{iDer = Just d} = do
   t <- getCurrentTime
   let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
       dir = "CoALPi-" ++ fmt
--- FIXME
---  save dir d
+  save dir d
   putStrLn $ "Saved in the directory " ++ dir
   return $ st {iDir = dir}
 

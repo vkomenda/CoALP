@@ -3,20 +3,23 @@
 
 module CoALP.UI.Dot where
 
-import Prelude hiding (mapM_)
+import Prelude hiding (mapM_, concat)
 
 import CoALP
 import CoALP.UI.Printer ()
 
---import Control.Applicative ((<$>))
+import Control.Applicative ((<$>))
+import Data.Array ((!))
 import qualified Data.Array as Array
 import Data.Foldable
---import System.Process
---import System.Directory
---import Control.Exception
---import Control.Monad (void)
---import Data.HashSet (HashSet)
---import qualified Data.HashSet as Set
+import qualified Data.Graph.Inductive.Graph as Graph
+import qualified Data.Graph.Inductive.Dot as Dot
+import Data.List (intercalate)
+import qualified Text.Dot as TextDot
+import System.Process
+import System.Directory
+import Control.Exception
+import Control.Monad (void)
 
 -- | Renders a tree as a string in the ImageMagick dot format.
 render :: TreeOper1 -> String
@@ -52,38 +55,27 @@ render t0 = "digraph G {\n" ++ snd (goA t0 0) ++ "}"
                       "[arrowhead=none];\n"))
              (start, "") ts
 
-{-
+-- | Renders derivation overview.
+renderDerivation :: Derivation TreeOper1 -> String
+renderDerivation d =
+  TextDot.showDot $ Dot.fglToDotGeneric g showGoals showTransition id
+  where
+    g = derivation d
+    showTransition r = show r
+    showGoals :: TreeOper1 -> String
+    showGoals t = showOperTerm $ (nodeBundleOper t)!0
+    showOperTerm :: Oper [TreeOper1] -> String
+    showOperTerm (Right (Just ts)) = intercalate "; " $
+                                     ((show . nodeTermOper) <$> ts)
+    showOperTerm _ = "n/a"
+
 -- | Saves a derivation rendered in the dot format in a specified directory, in
 -- a set of PNG files therein.
-save :: String -> [HashSet (ONode Occ)] -> IO ()
-save dir tts =
+save :: String -> Derivation TreeOper1 -> IO ()
+save dir d =
   flip catch (print :: IOError -> IO ()) $ do
     createDirectory dir
-    mapM_ wr (idx $ Set.toList <$> tts)
+    writeFile (base ++ ".gv") $ renderDerivation d
+    void $ runCommand $ "dot -Tpng " ++ base ++ ".gv -o " ++ base ++ ".png"
   where
-    wr (ts, i) =
-      mapM_ (\(t, j) -> do
-                let base = dir ++ "/" ++ show i ++ "-" ++ show j
-                writeFile (base ++ ".gv") (render t)
-                void $ runCommand $ "dot -Tpng " ++ base ++ ".gv -o " ++
-                                     base ++ ".png")
-            (idx ts)
-    idx :: [a] -> [(a, Int)]
-    idx l = zip l [0..]
-
-saveFinal :: String -> [HashSet (ONode Occ)] -> IO ()
-saveFinal dir tts =
-   flip catch (print :: IOError -> IO ()) $ do
-    createDirectory dir
-    wr (last (idx $ Set.toList <$> tts))
-  where
-    wr (ts, i) =
-      mapM_ (\(t, j) -> do
-                let base = dir ++ "/" ++ show i ++ "-" ++ show j
-                writeFile (base ++ ".gv") (render t)
-                void $ runCommand $ "dot -Tpng " ++ base ++ ".gv -o " ++
-                                     base ++ ".png")
-            (idx ts)
-    idx :: [a] -> [(a, Int)]
-    idx l = zip l [0..]
--}
+    base = dir ++ "/" ++ "overview"
