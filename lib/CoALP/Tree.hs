@@ -20,6 +20,7 @@ import Data.Hashable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import Data.Graph.Inductive (Gr, Node, (&))
+import Data.Ix (range)
 import qualified Data.Graph.Inductive as Graph
 import Data.List (partition)
 import Data.Maybe
@@ -130,7 +131,7 @@ initTree bounds a =
   NodeOper a $ Array.listArray bounds (repeat $ Left ToBeMatched)
 
 matchTree :: Program1 -> TreeOper1 -> TreeOper1
-matchTree p (NodeOper a b) =
+matchTree p0 t@(NodeOper a b) =
   NodeOper a $ Array.listArray (Array.bounds b) (grow <$> Array.assocs b)
   where
     grow :: (Int, Oper [TreeOper1]) -> Oper [TreeOper1]
@@ -145,6 +146,12 @@ matchTree p (NodeOper a b) =
       where
         c = (program p)!i
     grow oper = snd oper
+
+    p = liftedBy ((+ 1) <$> maxVarTree t)
+    liftedBy n = Program $ Array.listArray bounds $ liftedClause n <$>
+                 range bounds
+    liftedClause n i = liftVarsClause n $ (program p0)!i
+    bounds = Array.bounds $ program p0
 
 type Rel a = a -> a -> Bool
 
@@ -191,11 +198,11 @@ data Derivation v =
   , derivationMaxSize :: Int
   }
 
-initDerivation :: (Int, Int) -> Goal1 ->
+initDerivation :: TreeOper1 ->
                   (TreeOper1 -> [(Transition, TreeOper1)]) ->
                   (TreeOper1 -> Maybe v) ->
                   Derivation v
-initDerivation bounds g f h =
+initDerivation t f h =
   Derivation
   {
     derivation        = Graph.mkGraph [(0, t)] []
@@ -205,12 +212,11 @@ initDerivation bounds g f h =
   , derivationHalt    = h
   , derivationMaxSize = 10000
   }
-  where t = goalTree bounds g
 
 goalTree :: (Int, Int) -> Goal1 -> TreeOper1
-goalTree bounds (Goal g') =
+goalTree bounds (Goal g) =
   NodeOper goalHead $ Array.listArray (0, 0) $ repeat $ Right $ Just $
-  initTree bounds <$> g'
+  initTree bounds <$> g
 
 data Halt v = HaltNodeNotFound Node
             | HaltMaxSizeExceeded
@@ -223,11 +229,11 @@ haltConditionMet _ = Nothing
 
 type Term1Loop = (Int, Term1, Term1)
 
-runDerivation :: (Int, Int) -> Goal1 ->
+runDerivation :: TreeOper1 ->
                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
                  (TreeOper1 -> Maybe v) ->
                  (Maybe [Halt v], Derivation v)
-runDerivation bounds g f h = runState derive $ initDerivation bounds g f h
+runDerivation t f h = runState derive $ initDerivation t f h
 
 derive :: State (Derivation v) (Maybe [Halt v])
 derive = do
@@ -283,7 +289,7 @@ queueBreadthFirst n (r, t) = do
      return Nothing
 
 matchTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
-matchTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
+matchTransitions p0 t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
   where
     growSuccessful :: ([Path], [(Path, Subst1)]) -> [(Transition, TreeOper1)]
     growSuccessful (pts, trs) =
@@ -327,12 +333,18 @@ matchTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
               (>>= subst (fromJust ms)) <$> clBody ((program p)!i)
     grow _ _ _ = error "matchSubtrees: grow error"
 
-runMatch :: Program1 -> Goal1 ->
-            (Maybe [Halt [Term1Loop]], Derivation [Term1Loop])
-runMatch p g = runDerivation (Array.bounds $ program p) g (matchTransitions p) h
+    p = liftedBy ((+ 1) <$> maxVarTree t)
+    liftedBy n = Program $ Array.listArray bounds $ liftedClause n <$>
+                 range bounds
+    liftedClause n i = liftVarsClause n $ (program p0)!i
+    bounds = Array.bounds $ program p0
+
+runMatch :: Program1 -> TreeOper1 ->
+                     (Maybe [Halt [Term1Loop]], Derivation [Term1Loop])
+runMatch p t = runDerivation t (matchTransitions p) h
   where
-    h t = if null l then Nothing else Just l
-      where l = loops t
+    h t1 = if null l then Nothing else Just l
+      where l = loops t1
     loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)
 
 -- | Implementation of Tier 2 guardedness check.
@@ -345,12 +357,14 @@ runMatch p g = runDerivation (Array.bounds $ program p) g (matchTransitions p) h
 -- be used iteratively by reapplication to the halted state to yield further
 -- loops if there are any.
 matchLoops :: Program1 -> [Term1Loop]
-matchLoops p = (findLoops . fst . runMatch p . Goal . \h -> [h]) `concatMap` heads
+matchLoops p =
+  (findLoops . fst . runMatch p . t . Goal . \h -> [h]) `concatMap` heads
   where
     findLoops Nothing = []
     findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
                             -- TODO: no duplicates
     heads = clHead <$> (Array.elems $ program p)
+    t = goalTree (Array.bounds $ program p)
 
 guardedMatch :: Program1 -> Bool
 guardedMatch = null . matchLoops

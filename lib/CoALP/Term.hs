@@ -146,6 +146,16 @@ recReducts = go []
         (\(t, u, i) -> go (w ++ [i]) t u) `concatMap` zip3 ts us [0..]
     go _ _ _ = []
 
+-- | Variable reduction measures with positions in the first term.
+varReducts :: (Eq a, Eq b) => Term a b -> Term a b -> [([Int], Term a b)]
+varReducts = go []
+  where
+    go w (Var i) u@(Fun _ (_:_)) = [(w, u)]
+    go w (Fun f ts) (Fun g us)
+      | f == g =
+        (\(t, u, i) -> go (w ++ [i]) t u) `concatMap` zip3 ts us [0..]
+    go _ _ _ = []
+
 -- | Recursive variable reduction measures with positions in the first term.
 recVarReducts :: (Eq a, Eq b) => Term a b -> Term a b -> [([Int], Term a b)]
 recVarReducts = go []
@@ -155,3 +165,11 @@ recVarReducts = go []
       | f == g =
         (\(t, u, i) -> go (w ++ [i]) t u) `concatMap` zip3 ts us [0..]
     go _ _ _ = []
+
+nonVarSubterms :: Term a b -> [([Int], Term a b)]
+nonVarSubterms (Var _)    = []
+nonVarSubterms (Fun _ ts) = go [] `concatMap` ts
+  where
+    go _ (Var _) = []
+    go w t@(Fun _ us) = (w, t) :
+                        (\(i, u) -> go (w ++ [i]) u) `concatMap` (zip [0..] us)

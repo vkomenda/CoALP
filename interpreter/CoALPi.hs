@@ -232,10 +232,10 @@ interactiveOptionNotValid = do
   goCoALP iState0
 
 interactiveLoad :: String -> IO IState
-interactiveLoad fileName = do
-  putStrLn welcome
-  st <- actLoadFromTerminal iState0 fileName
-  goCoALP st
+interactiveLoad fileName =
+  putStrLn welcome >>
+  actLoadFromTerminal iState0 fileName >>=
+  goCoALP
 
 interactiveLoadRun :: String -> IO IState
 interactiveLoadRun fileName =
