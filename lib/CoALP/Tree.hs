@@ -9,6 +9,7 @@ import Prelude hiding (foldr, concat, concatMap, all, sequence, sequence_)
 import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
+import CoALP.Derivation
 
 import Control.Applicative
 import Control.Arrow
@@ -20,8 +21,8 @@ import Data.Hashable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
 import Data.Graph.Inductive (Gr, Node, (&))
-import Data.Ix (range)
 import qualified Data.Graph.Inductive as Graph
+import Data.Ix (range)
 import Data.List (partition)
 import Data.Maybe
 import Data.Traversable
@@ -180,113 +181,12 @@ data Transition = Transition
                   , transitionSubst :: Subst1
                   }
 
-data Derivation v =
-  Derivation
-  {
-    -- | derivation graph
-    derivation        :: Gr TreeOper1 Transition
-    -- | bijection from found trees to nodes
-  , derivationTrees   :: HashMap TreeOper1 Node
-    -- | work queue
-  , derivationQueue   :: [Node]
-    -- read-only environment - TODO
-    -- | step function
-  , derivationStep    :: TreeOper1 -> [(Transition, TreeOper1)]
-    -- | halting condition with output of type @v@
-  , derivationHalt    :: TreeOper1 -> Maybe v
-    -- | maximum number of nodes in the graph
-  , derivationMaxSize :: Int
-  }
-
-initDerivation :: TreeOper1 ->
-                  (TreeOper1 -> [(Transition, TreeOper1)]) ->
-                  (TreeOper1 -> Maybe v) ->
-                  Derivation v
-initDerivation t f h =
-  Derivation
-  {
-    derivation        = Graph.mkGraph [(0, t)] []
-  , derivationTrees   = HashMap.singleton t 0
-  , derivationQueue   = [0]
-  , derivationStep    = f
-  , derivationHalt    = h
-  , derivationMaxSize = 10000
-  }
-
 goalTree :: (Int, Int) -> Goal1 -> TreeOper1
 goalTree bounds (Goal g) =
   NodeOper goalHead $ Array.listArray (0, 0) $ repeat $ Right $ Just $
   initTree bounds <$> g
 
-data Halt v = HaltNodeNotFound Node
-            | HaltMaxSizeExceeded
-            | HaltConditionMet v
-            deriving (Show, Eq)
-
-haltConditionMet :: Halt v -> Maybe v
-haltConditionMet (HaltConditionMet v) = Just v
-haltConditionMet _ = Nothing
-
 type Term1Loop = (Int, Term1, Term1)
-
-runDerivation :: TreeOper1 ->
-                 (TreeOper1 -> [(Transition, TreeOper1)]) ->
-                 (TreeOper1 -> Maybe v) ->
-                 (Maybe [Halt v], Derivation v)
-runDerivation t f h = runState derive $ initDerivation t f h
-
-derive :: State (Derivation v) (Maybe [Halt v])
-derive = do
-  d <- gets derivation
-  q <- gets derivationQueue
-  case q of
-   [] -> return Nothing
-   n:_ -> do
-     case Graph.lab d n of
-      Nothing -> return $ Just [HaltNodeNotFound n]
-      Just t -> do
-        f <- gets derivationStep
-        outs <- sequence $ queueBreadthFirst n <$> f t
-        modify $ \st -> st { derivationQueue = tail $ derivationQueue st }
-        let leftouts = filter isJust outs
-        if null leftouts
-          then derive
-          else return $ sequence leftouts
-
-queueBreadthFirst :: Node -> (Transition, TreeOper1) ->
-                     State (Derivation v) (Maybe (Halt v))
-queueBreadthFirst n (r, t) = do
-  ts <- gets derivationTrees
-  -- check if a copy of the same tree has been searched already
-  case HashMap.lookup t ts of  -- TODO (there are still some semantic copies):
-                               -- 1. relate trees with the same success subtrees
-                               -- 2. equiv. up to variable renaming
-                               -- 3. 1&2 possible using NF conversion before
-                               --    adding trees to derivation
-   Nothing -> do
-     m <- gets derivationMaxSize
-     if n < m
-       then do
-         d <- gets derivation
-         let i = Graph.noNodes d
-         modify $ \st ->
-           st { derivation = ([(r, n)], i, t, []) & derivation st
-              , derivationTrees = HashMap.insert t i $ derivationTrees st }
-         h <- gets derivationHalt
-         -- check the halting condition
-         case h t of
-          Just v  -> do
-            -- do not queue a halting node for further search
-            return $ Just $ HaltConditionMet v
-          Nothing -> do
-            modify $ \st ->
-              st { derivationQueue = derivationQueue st ++ [i] }
-            return Nothing
-       else return $ Just HaltMaxSizeExceeded
-   Just j -> do
-     modify $ \st ->
-       st { derivation = ([(r, n)], j, t, []) & derivation st }
-     return Nothing
 
 matchTransitions :: Program1 -> TreeOper1 -> [(Transition, TreeOper1)]
 matchTransitions p0 t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
@@ -340,7 +240,7 @@ matchTransitions p0 t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
     bounds = Array.bounds $ program p0
 
 runMatch :: Program1 -> TreeOper1 ->
-                     (Maybe [Halt [Term1Loop]], Derivation [Term1Loop])
+            (Maybe [Halt [Term1Loop]], Derivation TreeOper1 Transition [Term1Loop])
 runMatch p t = runDerivation t (matchTransitions p) h
   where
     h t1 = if null l then Nothing else Just l

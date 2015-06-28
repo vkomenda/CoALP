@@ -56,7 +56,7 @@ render t0 = "digraph G {\n" ++ snd (goA t0 0) ++ "}"
              (start, "") ts
 
 -- | Renders derivation overview.
-renderDerivation :: Derivation TreeOper1 -> String
+renderDerivation :: Derivation TreeOper1 Transition TreeOper1 -> String
 renderDerivation d =
   TextDot.showDot $ Dot.fglToDotGeneric g showGoals showTransition id
   where
@@ -65,17 +65,17 @@ renderDerivation d =
     showGoals :: TreeOper1 -> String
     showGoals t = showOperTerm $ (nodeBundleOper t)!0
     showOperTerm :: Oper [TreeOper1] -> String
-    showOperTerm (Right (Just ts)) = intercalate "; " $
+    showOperTerm (Right (Just ts)) = intercalate "\n" $
                                      ((show . nodeTermOper) <$> ts)
     showOperTerm _ = "n/a"
 
 -- | Saves a derivation rendered in the dot format in a specified directory, in
 -- a set of PNG files therein.
-save :: String -> Derivation TreeOper1 -> IO ()
+save :: String -> Derivation TreeOper1 Transition TreeOper1 -> IO ()
 save dir d =
   flip catch (print :: IOError -> IO ()) $ do
     createDirectory dir
-    writeFile (base ++ ".gv") $ renderDerivation d
-    void $ runCommand $ "dot -Tpng " ++ base ++ ".gv -o " ++ base ++ ".png"
+    writeFile (base ++ ".dot") $ renderDerivation d
+    void $ runCommand $ "dot -Tpng " ++ base ++ ".dot -o " ++ base ++ ".png"
   where
     base = dir ++ "/" ++ "overview"

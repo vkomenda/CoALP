@@ -22,7 +22,8 @@ data IState = IState
                 iProg  :: Maybe Program1          -- ^ logic clauses
               , iGoals :: [Goal1]                 -- ^ goals
               , iNext  :: Int                     -- ^ the next variable
-              , iDer   :: Maybe (Derivation TreeOper1)  -- ^ derivation
+              , iDer   :: Maybe (Derivation TreeOper1 Transition TreeOper1)
+                          -- ^ derivation
               , iDir   :: String                  -- ^ save directory
               }
 

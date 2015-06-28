@@ -35,6 +35,7 @@ library
 
   other-modules:    CoALP.Resolution
                     CoALP.Tree
+                    CoALP.Derivation
                     CoALP.Subst
                     CoALP.Clause
                     CoALP.Term

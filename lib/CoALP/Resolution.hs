@@ -7,6 +7,7 @@ import CoALP.Term
 import CoALP.Clause
 import CoALP.Subst
 import CoALP.Tree
+import CoALP.Derivation
 
 import Control.Applicative
 import Control.Arrow
@@ -82,15 +83,15 @@ mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
     nVars = (+ 1) <$> maxVarTree t
 
 runResolution :: Program1 -> Goal1 ->
-                 (Maybe [Halt TreeOper1], Derivation TreeOper1)
+                 (Maybe [Halt TreeOper1], Derivation TreeOper1 Transition TreeOper1)
 runResolution p g = runDerivation t f h
   where
     f = fmap (id *** matchTree p) . mguTransitions p
     h u = if successful u then Just u else Nothing
     t = matchTree p $ goalTree (Array.bounds $ program p) g
 
-continueResolution :: Derivation TreeOper1 ->
-                      (Maybe [Halt TreeOper1], Derivation TreeOper1)
+continueResolution :: Derivation TreeOper1 Transition TreeOper1 ->
+                      (Maybe [Halt TreeOper1], Derivation TreeOper1 Transition TreeOper1)
 continueResolution = runState derive
 
 successful :: TreeOper1 -> Bool
