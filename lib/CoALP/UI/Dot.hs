@@ -3,13 +3,13 @@
 
 module CoALP.UI.Dot where
 
-import Prelude hiding (mapM_, concat)
+import Prelude hiding (sequence_, concatMap)
 
 import CoALP
 import CoALP.UI.Printer ()
 
 import Control.Applicative ((<$>))
-import Data.Array ((!))
+import Data.Array (Array, (!))
 import qualified Data.Array as Array
 import Data.Foldable
 import qualified Data.Graph.Inductive.Graph as Graph
@@ -23,37 +23,50 @@ import Control.Monad (void)
 
 -- | Renders a tree as a string in the ImageMagick dot format.
 render :: TreeOper1 -> String
-render t0 = "digraph G {\n" ++ snd (goA t0 0) ++ "}"
+render t0 = "digraph G {\nnode [shape=plaintext];\n" ++ goA [] t0 ++ "}"
   where
-    goA :: TreeOper1 -> Int -> (Int, String)
-    goA (NodeOper a b) start =
-      let (next, dot) = connect goB (Array.elems b) (start + 1) start in
-      (next, show start ++ " [shape=none,label=\"" ++
-             show a ++ "\"];\n" ++ dot)
+    showPath :: Path -> String
+    showPath w = intercalate "_" $ show <$> w
 
-    goB :: Oper [TreeOper1] -> Int -> (Int, String)
-    goB (Right (Just [])) start =
-      (start + 1, show start ++
-                  "[shape=square,width=.2,label=\"\",fixedsize=true];\n")
-    goB (Right (Just ts)) start =
-      let (next, dot) = connect goA ts (start + 1) start in
-       (next, show start ++ " [shape=point];\n" ++ dot)
-    goB (Right Nothing) start =
-      (start + 1, show start ++
-                  "[shape=circle,width=.2,label=\"\",fixedsize=true];\n")
-    goB (Left ToBeMatched) start =
-      (start + 1, show start ++
-                  "[shape=square,width=.2,label=\"!\",fixedsize=true];\n")
-    goB (Left ToBeUnified) start =
-      (start + 1, show start ++
-                  "[shape=square,width=.2,label=\"?\",fixedsize=true];\n")
+    rootTag :: String
+    rootTag = "root"
 
-    connect fstep ts start parent =
-      foldl' (\(start_t, dot) t ->
-               let (next, dot_t) = fstep t start_t in
-               (next, dot ++ dot_t ++ show parent ++ " -> " ++ show start_t ++
-                      "[arrowhead=none];\n"))
-             (start, "") ts
+    goA :: Path -> TreeOper1 -> String
+    goA w (NodeOper a b) =
+      tag w ++ " [label=" ++
+      "<<table border=\"0\" cellborder=\"1\" cellspacing=\"0\">\n" ++
+      "<tr><td port=\"term\" colspan=\"" ++ len ++ "\">" ++
+      show a ++ "</td></tr>\n" ++ "<tr>\n" ++
+      concatMap peekB bs ++
+      "</tr>\n" ++
+      "</table>>];\n" ++
+      lastLink w ++
+      concatMap (goB w) bs
+      where
+        len = show $ 1 + (uncurry (flip (-)) (Array.bounds b))
+        bs = Array.assocs b
+
+    tag [] = rootTag
+    tag w  = rootTag ++ "_" ++ showPath w
+
+    lastLink w =
+      if not (null w) && not (null (init w))
+      then tag (init (init w)) ++ ":" ++ show (last (init w)) ++ " -> " ++
+           tag w ++ ":term\n"
+      else ""
+
+    peekB :: (Int, Oper [TreeOper1]) -> String
+    peekB (_, Right (Just []))  = "<td>QED</td>\n"
+    peekB (i, Right (Just ts))  = "<td port=\"" ++ show i ++
+                                  "\">" ++ show i ++ "</td>\n"
+    peekB (i, Right Nothing)    = "<td bgcolor=\"grey\"></td>\n"
+    peekB (_, Left ToBeMatched) = "<td>TBM</td>\n"
+    peekB (_, Left ToBeUnified) = "<td>TBU</td>\n"
+
+    goB :: Path -> (Int, Oper [TreeOper1]) -> String
+    goB w (i, Right (Just ts@(_:_))) =
+      concatMap (\(j, t) -> goA (w ++ [i, j]) t) (zip [0..] ts)
+    goB _ _ = ""
 
 -- | Renders derivation overview.
 renderDerivation :: Derivation TreeOper1 Transition TreeOper1 -> String
@@ -75,7 +88,12 @@ save :: String -> Derivation TreeOper1 Transition TreeOper1 -> IO ()
 save dir d =
   flip catch (print :: IOError -> IO ()) $ do
     createDirectory dir
-    writeFile (base ++ ".dot") $ renderDerivation d
-    void $ runCommand $ "dot -Tpng " ++ base ++ ".dot -o " ++ base ++ ".png"
+    writeFile (overview ++ extension) $ renderDerivation d
+    sequence_ $ (\(i, t) -> writeFile (base ++ show i ++ extension) $ render t
+                ) <$> Graph.labNodes (derivation d)
+    void $ runCommand convAll
   where
-    base = dir ++ "/" ++ "overview"
+    extension = ".gv"
+    base = dir ++ "/"
+    overview = base ++ "overview"
+    convAll = "dot -Tpng " ++ base ++ "*" ++ extension ++ " -O"

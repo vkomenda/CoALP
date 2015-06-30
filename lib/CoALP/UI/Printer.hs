@@ -41,7 +41,7 @@ instance (ShowNoQ a, Show b) => Show (Goal a b) where
 
 instance (ShowNoQ a, Show b) => Show (Subst (Term a) b b) where
   show s = intercalate ", " $
-           (\(i, a) -> "(" ++ show i ++ " -> " ++ show a ++ ")"
+           (\(i, a) -> show a ++ "/" ++ show i
            ) <$> HashMap.toList (unSubst s)
 
 instance (Show a) => Show (TreeOper a) where
@@ -62,12 +62,12 @@ instance (Show a) => Show (TreeOper a) where
 
 instance Show Transition where
   show r =
-    "(" ++ show (transitionPath r) ++ " <= " ++ show (transitionSubst r) ++ ")"
+    "(" ++ show (transitionPath r) ++ " <- " ++ show (transitionSubst r) ++ ")"
 
 instance Show Guard where
   show (Guard i gs) = "(" ++ show i ++ " :guard: " ++
                       show (HashSet.toList gs) ++ ")"
 
 instance Show GuardCxt where
-  show (GuardCxt i gs) = "(" ++ show i ++ " :gcontext: " ++
+  show (GuardCxt i gs) = "(" ++ show i ++ " :gcxt: " ++
                          show (HashSet.toList gs) ++ ")"
