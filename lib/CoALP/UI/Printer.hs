@@ -65,8 +65,8 @@ instance Show Transition where
     "(" ++ show (transitionPath r) ++ " <- " ++ show (transitionSubst r) ++ ")"
 
 instance Show Guard where
-  show (Guard i gs) = "(" ++ show i ++ " :guard: " ++
-                      show (HashSet.toList gs) ++ ")"
+  show (Guard i w a) = "(" ++ show i ++ " :guarded at: " ++
+                       show w ++ " :by: " ++ show a
 
 instance Show GuardCxt where
   show (GuardCxt i gs) = "(" ++ show i ++ " :gcxt: " ++

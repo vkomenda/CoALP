@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TupleSections #-}
 module CoALP.Resolution where
 
@@ -11,14 +12,16 @@ import CoALP.Derivation
 
 import Control.Applicative
 import Control.Arrow
-import Data.Array ((!), (//))
 import Control.Monad.Trans.State
+import Data.Array ((!), (//))
+import Data.Hashable
 import qualified Data.Array as Array
 import Data.Foldable
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.List (partition)
 import Data.Maybe
+import GHC.Generics (Generic)
 
 toBeUnified :: TreeOper1 -> Path -> [Path]
 toBeUnified (NodeOper _ b) prefix =
@@ -109,10 +112,13 @@ final = all finalB . Array.elems . nodeBundleOper
 
 data Guard = Guard
              {
-               guardClause   :: Int
-             , guardMeasures :: HashSet Term1
+               guardClause  :: Int
+             , guardPath    :: Path
+             , guardMeasure :: Term1
              }
-           deriving (Eq)
+           deriving (Eq, Generic)
+
+instance Hashable Guard
 
 data GuardCxt = GuardCxt
                 {
@@ -120,6 +126,13 @@ data GuardCxt = GuardCxt
                 , guardCxtMeasures :: HashSet (Path, Term1)
                 }
               deriving (Eq)
+
+data TransGuards = TransGuards
+                   {
+                     transPath   :: Path
+                   , transSubst  :: Subst1
+                   , transGuards :: HashSet Guard
+                   }
 
 transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, GuardCxt)]
 transitionGuards p t = cxt <$> mguTransitions p t
@@ -137,6 +150,23 @@ transitionGuards p t = cxt <$> mguTransitions p t
                           filter (\s -> isJust (snd s `matchMaybe` m)
                                  ) subterms
                    ) <$> HashSet.toList measures
+
+guardTransitions :: Program1 -> TreeOper1 -> [(TransGuards, TreeOper1)]
+guardTransitions p t = cxt <$> mguTransitions p t
+  where
+    cxt (r, tMgu) = (TransGuards w s gs, tMgu)
+      where
+        gs       = HashSet.fromList $ (\(w1, a) -> Guard i w1 a) <$> clProj
+        s        = transitionSubst r
+        w        = transitionPath r
+        (v, i)   = (init &&& last) w
+        aMatch   = fromJust (t    `termAt` v)
+        aMgu     = fromJust (tMgu `termAt` v)
+        measures = snd <$> varReducts aMatch aMgu
+        subterms = nonVarSubterms $ clHead ((program p)!i)
+        clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)
+                                 ) subterms
+                   ) `concatMap` measures
 
 guardCxt :: GuardCxt -> TreeOper1 -> GuardCxt
 guardCxt (GuardCxt i gs) t =
@@ -193,3 +223,12 @@ resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
 
 guardedResolution :: Program1 -> Bool
 guardedResolution = null . resolutionLoops
+
+runGuards :: Program1 -> TreeOper1 ->
+             ( Maybe [Halt [Term1Loop]]
+             , Derivation TreeOper1 TransGuards [Term1Loop] )
+runGuards p t = runDerivation t (guardTransitions p) h
+  where
+    h t1 = if null l then Nothing else Just l
+      where l = loops t1
+    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)

@@ -13,15 +13,10 @@ import CoALP.Derivation
 
 import Control.Applicative
 import Control.Arrow
-import Control.Monad.Trans.State
 import Data.Array (Array, (!), (//))
 import qualified Data.Array as Array
 import Data.Foldable
 import Data.Hashable
-import           Data.HashMap.Lazy (HashMap)
-import qualified Data.HashMap.Lazy as HashMap
-import Data.Graph.Inductive (Gr, Node, (&))
-import qualified Data.Graph.Inductive as Graph
 import Data.Ix (range)
 import Data.List (partition)
 import Data.Maybe

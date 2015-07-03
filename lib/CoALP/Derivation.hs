@@ -3,10 +3,7 @@ module CoALP.Derivation where
 import Prelude hiding (foldr, concat, concatMap, all, sequence, sequence_)
 
 import Control.Applicative
-import Control.Arrow
 import Control.Monad.Trans.State
-import Data.Array (Array, (!), (//))
-import qualified Data.Array as Array
 import Data.Hashable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
