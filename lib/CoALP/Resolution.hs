@@ -17,6 +17,7 @@ import Data.Array ((!), (//))
 import Data.Hashable
 import qualified Data.Array as Array
 import Data.Foldable
+import qualified Data.Graph.Inductive as Graph
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.List (partition)
@@ -90,7 +91,7 @@ runResolution :: Program1 -> Goal1 ->
 runResolution p g = runDerivation t f h
   where
     f = fmap (id *** matchTree p) . mguTransitions p
-    h u = if successful u then Just u else Nothing
+    h (_, _, u, _) _ = if successful u then Just u else Nothing
     t = matchTree p $ goalTree (Array.bounds $ program p) g
 
 continueResolution :: Derivation TreeOper1 Transition TreeOper1 ->
@@ -224,11 +225,22 @@ resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
 guardedResolution :: Program1 -> Bool
 guardedResolution = null . resolutionLoops
 
+type LoopsOrGuards = Either [Term1Loop] (HashSet Guard)
+
 runGuards :: Program1 -> TreeOper1 ->
-             ( Maybe [Halt [Term1Loop]]
-             , Derivation TreeOper1 TransGuards [Term1Loop] )
-runGuards p t = runDerivation t (guardTransitions p) h
+             ( Maybe [Halt LoopsOrGuards]
+             , Derivation TreeOper1 TransGuards LoopsOrGuards )
+runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
   where
-    h t1 = if null l then Nothing else Just l
-      where l = loops t1
+    h ([(r, n)], _, u, _) d =
+      if not (null l)
+      then Just $ Left l
+      else if any ((==) (transGuards r)) gcxts
+           then Just $ Right $ transGuards r
+           else Nothing
+      where
+        l = loops u
+        e = connect 0 n d
+        gcxts = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
+    h _ _ = Nothing
     loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)

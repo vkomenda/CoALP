@@ -55,7 +55,6 @@ library
                     directory,
                     dotgen               == 0.4.2.*,
                     fgl                  == 5.5.*,
-                    fgl-visualize        == 0.1.*,
                     hashable,
                     deepseq,
                     parsec               >= 3.1,

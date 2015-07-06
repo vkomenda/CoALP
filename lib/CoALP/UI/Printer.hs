@@ -71,3 +71,8 @@ instance Show Guard where
 instance Show GuardCxt where
   show (GuardCxt i gs) = "(" ++ show i ++ " :gcxt: " ++
                          show (HashSet.toList gs) ++ ")"
+
+instance Show TransGuards where
+  show r =
+    "(" ++ show (transPath r) ++ " <- " ++ show (transSubst r) ++ " | " ++
+    show (transGuards r) ++ ")"

@@ -1,14 +1,17 @@
 module CoALP.Derivation where
 
-import Prelude hiding (foldr, concat, concatMap, all, sequence, sequence_)
+import Prelude hiding (foldr, concatMap, all, sequence, sequence_)
 
 import Control.Applicative
 import Control.Monad.Trans.State
 import Data.Hashable
 import           Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
-import Data.Graph.Inductive (Gr, Node, (&))
+import           Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
+import Data.Graph.Inductive (Gr, Node, Context, (&))
 import qualified Data.Graph.Inductive as Graph
+import Data.List (nub)
 import Data.Maybe
 import Data.Traversable
 
@@ -25,12 +28,13 @@ data Hashable n => Derivation n e v =
     -- | step function
   , derivationStep    :: n -> [(e, n)]
     -- | halting condition with output of type @v@
-  , derivationHalt    :: n -> Maybe v
+  , derivationHalt    :: Context n e -> Gr n e -> Maybe v
     -- | maximum number of nodes in the graph
   , derivationMaxSize :: Int
   }
 
-initDerivation :: Hashable n => n -> (n -> [(e, n)]) -> (n -> Maybe v) ->
+initDerivation :: Hashable n => n -> (n -> [(e, n)]) ->
+                 (Context n e -> Gr n e -> Maybe v) ->
                   Derivation n e v
 initDerivation t f h =
   Derivation
@@ -52,7 +56,8 @@ haltConditionMet :: Halt v -> Maybe v
 haltConditionMet (HaltConditionMet v) = Just v
 haltConditionMet _ = Nothing
 
-runDerivation :: (Eq n, Hashable n) => n -> (n -> [(e, n)]) -> (n -> Maybe v) ->
+runDerivation :: (Eq n, Hashable n) => n -> (n -> [(e, n)]) ->
+                 (Context n e -> Gr n e -> Maybe v) ->
                  (Maybe [Halt v], Derivation n e v)
 runDerivation t f h = runState derive $ initDerivation t f h
 
@@ -90,12 +95,13 @@ queueBreadthFirst n (r, t) = do
        then do
          d <- gets derivation
          let i = Graph.noNodes d
+             cxt = ([(r, n)], i, t, [])
          modify $ \st ->
-           st { derivation = ([(r, n)], i, t, []) & derivation st
+           st { derivation = cxt & derivation st
               , derivationNodes = HashMap.insert t i $ derivationNodes st }
          h <- gets derivationHalt
          -- check the halting condition
-         case h t of
+         case h cxt d of
           Just v  -> do
             -- do not queue a halting node for further search
             return $ Just $ HaltConditionMet v
@@ -108,3 +114,27 @@ queueBreadthFirst n (r, t) = do
      modify $ \st ->
        st { derivation = ([(r, n)], j, t, []) & derivation st }
      return Nothing
+
+nodePaths :: Node -> Node -> Gr a b -> [[Node]]
+nodePaths start = go [start] start
+  where
+    go visited i j g
+      | i == j    = [[]]
+      | otherwise = [ k : path
+                    | k <- nub $ Graph.suc g i
+                    , k `notElem` visited
+                    , path <- go (k : visited) k j g
+                    ]
+
+nodesClosedBy :: Node -> Node -> Gr a b -> IntSet
+nodesClosedBy start end g =
+  IntSet.fromList (start : concat (nodePaths start end g))
+
+connect :: Node -> Node -> Gr a b -> Gr a b
+connect start end g = Graph.ufold betw Graph.empty g
+  where
+    betw (adjin, i, a, adjout) g'
+      | not (IntSet.member i ns) = g'
+      | otherwise = (es adjin, i, a, es adjout) & g'
+    ns = nodesClosedBy start end g
+    es = filter (\(_, i) -> IntSet.member i ns)

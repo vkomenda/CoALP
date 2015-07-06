@@ -3,18 +3,19 @@
 
 module CoALP.UI.Dot where
 
-import Prelude hiding (sequence_, concatMap)
+import Prelude hiding (sequence_, concatMap, mapM_)
 
 import CoALP
 import CoALP.UI.Printer ()
 
 import Control.Applicative ((<$>))
-import Data.Array (Array, (!))
+import Data.Array ((!))
 import qualified Data.Array as Array
 import Data.Foldable
+import Data.Graph.Inductive.Graph (Graph)
 import qualified Data.Graph.Inductive.Graph as Graph
-import qualified Data.Graph.Inductive.Dot as Dot
 import Data.List (intercalate)
+import Text.Dot (Dot)
 import qualified Text.Dot as TextDot
 import System.Process
 import System.Directory
@@ -23,7 +24,7 @@ import Control.Monad (void)
 
 -- | Renders a tree as a string in the ImageMagick dot format.
 render :: TreeOper1 -> String
-render t0 = "digraph G {\nnode [shape=plaintext];\n" ++ goA [] t0 ++ "}"
+render t0 = "digraph Derivation {\nnode [shape=plaintext];\n" ++ goA [] t0 ++ "}"
   where
     showPath :: Path -> String
     showPath w = intercalate "_" $ show <$> w
@@ -56,12 +57,12 @@ render t0 = "digraph G {\nnode [shape=plaintext];\n" ++ goA [] t0 ++ "}"
       else ""
 
     peekB :: (Int, Oper [TreeOper1]) -> String
-    peekB (_, Right (Just []))  = "<td>QED</td>\n"
-    peekB (i, Right (Just ts))  = "<td port=\"" ++ show i ++
+    peekB (_, Right (Just []))  = "<td><b>QED</b></td>\n"
+    peekB (i, Right (Just _))  = "<td port=\"" ++ show i ++
                                   "\">" ++ show i ++ "</td>\n"
-    peekB (i, Right Nothing)    = "<td bgcolor=\"grey\"></td>\n"
-    peekB (_, Left ToBeMatched) = "<td>TBM</td>\n"
-    peekB (_, Left ToBeUnified) = "<td>TBU</td>\n"
+    peekB (_, Right Nothing)    = "<td bgcolor=\"grey\"></td>\n"
+    peekB (_, Left ToBeMatched) = "<td><i>M</i></td>\n"
+    peekB (_, Left ToBeUnified) = "<td><i>U</i></td>\n"
 
     goB :: Path -> (Int, Oper [TreeOper1]) -> String
     goB w (i, Right (Just ts@(_:_))) =
@@ -71,7 +72,7 @@ render t0 = "digraph G {\nnode [shape=plaintext];\n" ++ goA [] t0 ++ "}"
 -- | Renders derivation overview.
 renderDerivation :: Derivation TreeOper1 Transition TreeOper1 -> String
 renderDerivation d =
-  TextDot.showDot $ Dot.fglToDotGeneric g showGoals showTransition id
+  TextDot.showDot $ dotGraph g showGoals showTransition
   where
     g = derivation d
     showTransition r = show r
@@ -81,6 +82,21 @@ renderDerivation d =
     showOperTerm (Right (Just ts)) = intercalate "\n" $
                                      ((show . nodeTermOper) <$> ts)
     showOperTerm _ = "n/a"
+
+dotGraph :: Graph gr => gr n e -> (n -> String) -> (e -> String) -> Dot ()
+dotGraph d nodeConv edgeConv = do
+  let es = Graph.labEdges d -- :: [(Int, Int, b)]
+      ns = Graph.labNodes d -- :: [(Int, a)]
+  TextDot.attribute ("rankdir", "LR")
+  mapM_ (\(n, p) ->
+          TextDot.userNode (TextDot.userNodeId n)
+                           [("label", nodeConv p)]
+        ) ns
+  mapM_ (\(a, b, p) ->
+          TextDot.edge (TextDot.userNodeId a)
+                       (TextDot.userNodeId b)
+                       [("label", edgeConv p)]
+        ) es
 
 -- | Saves a derivation rendered in the dot format in a specified directory, in
 -- a set of PNG files therein.
