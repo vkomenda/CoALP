@@ -47,7 +47,7 @@ actLoad st = do
     do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs
        return $ st {iProg = Just pr, iGoals = gs}
     else
-    do putStrLn $ "The given program is unguarded.\n"
+    do putStrLn $ show3Loops uLoops
        return st
     -- TODO? 1) Retrieve the next variable from the parser state or disallow
     -- separate changes to the program or goals. The latter is more preferable.
@@ -63,8 +63,11 @@ actLoadFromTerminal st fileName = do
     do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs
        return $ st {iProg = Just pr, iGoals = gs}
     else
-    do putStrLn $ "The given program is unguarded.\n"
+    do putStrLn $ show3Loops uLoops
        return st
+
+show3Loops :: [Term1Loop] -> String
+show3Loops loops = "Program admits loops " ++ show (take 3 loops) ++ "\n"
 
 actProgram :: IState -> IO IState
 actProgram st = do
@@ -83,7 +86,7 @@ actProgram st = do
       if null uLoops
         then return $ st {iProg = pr, iNext = tpsNext tps}
         else do
-          putStrLn $ "\nThe given program is unguarded.\n"
+          putStrLn $ "\n" ++ show3Loops uLoops
           return st
     else return st
 

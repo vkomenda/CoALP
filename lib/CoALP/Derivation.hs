@@ -15,6 +15,11 @@ import Data.List (nub)
 import Data.Maybe
 import Data.Traversable
 
+data Observ v = ObservContinue
+              | ObservCut
+              | ObservHalt v
+              deriving Show
+
 data Hashable n => Derivation n e v =
   Derivation
   {
@@ -27,14 +32,14 @@ data Hashable n => Derivation n e v =
     -- read-only environment - TODO
     -- | step function
   , derivationStep    :: n -> [(e, n)]
-    -- | halting condition with output of type @v@
-  , derivationHalt    :: Context n e -> Gr n e -> Maybe v
+    -- | continuation condition with output of type @v@
+  , derivationObserv  :: Context n e -> Gr n e -> Observ v
     -- | maximum number of nodes in the graph
   , derivationMaxSize :: Int
   }
 
 initDerivation :: Hashable n => n -> (n -> [(e, n)]) ->
-                 (Context n e -> Gr n e -> Maybe v) ->
+                  (Context n e -> Gr n e -> Observ v) ->
                   Derivation n e v
 initDerivation t f h =
   Derivation
@@ -43,7 +48,7 @@ initDerivation t f h =
   , derivationNodes   = HashMap.singleton t 0
   , derivationQueue   = [0]
   , derivationStep    = f
-  , derivationHalt    = h
+  , derivationObserv  = h
   , derivationMaxSize = 10000
   }
 
@@ -57,9 +62,19 @@ haltConditionMet (HaltConditionMet v) = Just v
 haltConditionMet _ = Nothing
 
 runDerivation :: (Eq n, Hashable n) => n -> (n -> [(e, n)]) ->
-                 (Context n e -> Gr n e -> Maybe v) ->
+                 (Context n e -> Gr n e -> Observ v) ->
                  (Maybe [Halt v], Derivation n e v)
-runDerivation t f h = runState derive $ initDerivation t f h
+runDerivation t f h = runState (case h ([], 0, t, []) (derivation d) of
+                                  ObservHalt v  ->
+                                    -- do not queue a halting node for further search
+                                    return $ Just [HaltConditionMet v]
+                                  ObservCut ->
+                                    return Nothing
+                                  ObservContinue ->
+                                    derive
+                               ) d
+  where
+    d = initDerivation t f h
 
 derive :: (Eq n, Hashable n) => State (Derivation n e v) (Maybe [Halt v])
 derive = do
@@ -99,16 +114,21 @@ queueBreadthFirst n (r, t) = do
          modify $ \st ->
            st { derivation = cxt & derivation st
               , derivationNodes = HashMap.insert t i $ derivationNodes st }
-         h <- gets derivationHalt
+         h <- gets derivationObserv
          -- check the halting condition
          case h cxt d of
-          Just v  -> do
-            -- do not queue a halting node for further search
-            return $ Just $ HaltConditionMet v
-          Nothing -> do
+          ObservContinue -> do
+            -- queue an intermediate node for further search
             modify $ \st ->
               st { derivationQueue = derivationQueue st ++ [i] }
             return Nothing
+          ObservCut ->
+            -- do not queue the last node in a cut branch node for further
+            -- however, continue with the derivation
+            return Nothing
+          ObservHalt v  ->
+            -- do not queue a halting node for further search
+            return $ Just $ HaltConditionMet v
        else return $ Just HaltMaxSizeExceeded
    Just j -> do
      modify $ \st ->

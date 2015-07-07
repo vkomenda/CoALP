@@ -77,7 +77,10 @@ renderDerivation d =
     g = derivation d
     showTransition r = show r
     showGoals :: TreeOper1 -> String
-    showGoals t = showOperTerm $ (nodeBundleOper t)!0
+    showGoals t = (if successful t
+                   then "SUCCESS\n"
+                   else "") ++
+                  showOperTerm ((nodeBundleOper t)!0)
     showOperTerm :: Oper [TreeOper1] -> String
     showOperTerm (Right (Just ts)) = intercalate "\n" $
                                      ((show . nodeTermOper) <$> ts)
@@ -90,7 +93,7 @@ dotGraph d nodeConv edgeConv = do
   TextDot.attribute ("rankdir", "LR")
   mapM_ (\(n, p) ->
           TextDot.userNode (TextDot.userNodeId n)
-                           [("label", nodeConv p)]
+                           [( "label", show n ++ "\n" ++ nodeConv p)]
         ) ns
   mapM_ (\(a, b, p) ->
           TextDot.edge (TextDot.userNodeId a)
@@ -112,4 +115,4 @@ save dir d =
     extension = ".gv"
     base = dir ++ "/"
     overview = base ++ "overview"
-    convAll = "dot -Tpng " ++ base ++ "*" ++ extension ++ " -O"
+    convAll = "dot -O -Tpng " ++ base ++ "*" ++ extension

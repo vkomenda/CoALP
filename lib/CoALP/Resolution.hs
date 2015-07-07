@@ -91,7 +91,7 @@ runResolution :: Program1 -> Goal1 ->
 runResolution p g = runDerivation t f h
   where
     f = fmap (id *** matchTree p) . mguTransitions p
-    h (_, _, u, _) _ = if successful u then Just u else Nothing
+    h (_, _, u, _) _ = if successful u then ObservHalt u else ObservContinue
     t = matchTree p $ goalTree (Array.bounds $ program p) g
 
 continueResolution :: Derivation TreeOper1 Transition TreeOper1 ->
@@ -196,6 +196,7 @@ nthOper :: Int -> Oper [a] -> Maybe a
 nthOper n (Right (Just ts)) = Just (ts!!n)
 nthOper _ _                 = Nothing
 
+{-
 resolutionLoops :: Program1 -> [Term1Loop]
 resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
   where
@@ -221,26 +222,34 @@ resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
     goals = (\h -> Goal [h]) <$> heads
     heads = clHead <$> (Array.elems $ program p)
     bounds = Array.bounds $ program p
-
-guardedResolution :: Program1 -> Bool
-guardedResolution = null . resolutionLoops
-
-type LoopsOrGuards = Either [Term1Loop] (HashSet Guard)
+-}
 
 runGuards :: Program1 -> TreeOper1 ->
-             ( Maybe [Halt LoopsOrGuards]
-             , Derivation TreeOper1 TransGuards LoopsOrGuards )
+             ( Maybe [Halt [Term1Loop]]
+             , Derivation TreeOper1 TransGuards [Term1Loop] )
 runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
   where
     h ([(r, n)], _, u, _) d =
       if not (null l)
-      then Just $ Left l
+      then ObservHalt l
       else if any ((==) (transGuards r)) gcxts
-           then Just $ Right $ transGuards r
-           else Nothing
+           then ObservCut
+           else ObservContinue
       where
         l = loops u
         e = connect 0 n d
         gcxts = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
-    h _ _ = Nothing
+    h _ _ = ObservContinue
     loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)
+
+resolutionLoops :: Program1 -> [Term1Loop]
+resolutionLoops p =
+  (findLoops . fst . runGuards p . t . Goal . \h -> [h]) `concatMap` heads
+  where
+    findLoops Nothing = []
+    findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
+    heads = clHead <$> (Array.elems $ program p)
+    t = goalTree (Array.bounds $ program p)
+
+guardedResolution :: Program1 -> Bool
+guardedResolution = null . resolutionLoops

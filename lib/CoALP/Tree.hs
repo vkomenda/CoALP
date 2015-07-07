@@ -238,7 +238,7 @@ runMatch :: Program1 -> TreeOper1 ->
             (Maybe [Halt [Term1Loop]], Derivation TreeOper1 Transition [Term1Loop])
 runMatch p t = runDerivation t (matchTransitions p) h
   where
-    h (_, _, t1, _) _ = if null l then Nothing else Just l
+    h (_, _, t1, _) _ = if null l then ObservContinue else ObservHalt l
       where l = loops t1
     loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)
 
