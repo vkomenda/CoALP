@@ -64,16 +64,11 @@ haltConditionMet _ = Nothing
 runDerivation :: (Eq n, Hashable n) => n -> (n -> [(e, n)]) ->
                  (Context n e -> Gr n e -> Observ v) ->
                  (Maybe [Halt v], Derivation n e v)
-runDerivation t f h = runState (case h ([], 0, t, []) (derivation d) of
-                                  ObservHalt v  ->
-                                    -- do not queue a halting node for further search
-                                    return $ Just [HaltConditionMet v]
-                                  ObservCut ->
-                                    return Nothing
-                                  ObservContinue ->
-                                    derive
-                               ) d
+runDerivation t f h = runState (observ0 $ h ([], 0, t, []) $ derivation d) d
   where
+    observ0 (ObservHalt v) = return $ Just [HaltConditionMet v]
+    observ0 ObservCut      = return Nothing
+    observ0 ObservContinue = derive
     d = initDerivation t f h
 
 derive :: (Eq n, Hashable n) => State (Derivation n e v) (Maybe [Halt v])

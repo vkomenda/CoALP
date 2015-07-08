@@ -239,8 +239,16 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
         l = loops u
         e = connect 0 n d
         gcxts = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
+    h ([], 0, u, _) d =
+      if not (null l)
+      then ObservHalt l
+      else ObservContinue
+      where
+        l = loops u
     h _ _ = ObservContinue
-    loops = treeLoopsBy $ \a1 a2 -> a2 /= goalHead && null (a1 `recReducts` a2)
+    loops = findLoops . fst . runMatch p
+    findLoops Nothing = []
+    findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
 
 resolutionLoops :: Program1 -> [Term1Loop]
 resolutionLoops p =
