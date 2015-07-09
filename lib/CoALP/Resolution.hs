@@ -111,11 +111,6 @@ final = all finalB . Array.elems . nodeBundleOper
     finalB (Right Nothing)   = True
     finalB _                 = False
 
-{-
-open :: TreeOper1 -> Bool
-open
--}
-
 data Guard = Guard
              {
                guardClause  :: Int
@@ -173,14 +168,13 @@ guardTransitions p t = cxt <$> mguTransitions p t
         clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)) subterms
                    ) `concatMap` measures
         ciloops :: [Term1Loop]
-        ciloops    = filter (\(k, _, _) -> k == i
-                            ) $ branchLoopsBy haveGuards w t
+        ciloops = filter (\(k, _, _) -> k == i) $ branchLoopsBy haveGuards w t
         cimeasures :: HashSet Term1
         cimeasures = HashSet.fromList $ snd <$>
-                     ((\(_, a1, a2) -> recVarReducts a2 a1) `concatMap` ciloops)
+                     ((\(_, a1, a2) -> recReducts a2 a1) `concatMap` ciloops)
         ci :: [(Path, Term1)]
-        ci         = (\m -> filter (\t' -> isJust (snd t' `matchMaybe` m)) clProj
-                     ) `concatMap` cimeasures
+        ci = (\m -> filter (\t' -> isJust (snd t' `matchMaybe` m)) clProj
+             ) `concatMap` cimeasures
         haveGuards :: Rel Term1
         haveGuards x y = y /= goalHead && not (null (x `recVarReducts` y))
 
@@ -249,13 +243,17 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
     h ([(r, n)], _, u, _) d =
       if not (null l)
       then ObservHalt l
-      else if any ((==) (transGuards r)) gcxts
-           then ObservCut
-           else ObservContinue
+      else if HashSet.null ci
+           then ObservContinue
+           else if any (== ci) cxt
+                then ObservCut
+                else ObservContinue
       where
-        l = loops u
-        e = connect 0 n d
-        gcxts = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
+
+        l   = loops u
+        e   = connect 0 n d
+        ci  = transGuards r
+        cxt = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
     h ([], 0, u, _) _ =
       if not (null l)
       then ObservHalt l
