@@ -68,9 +68,9 @@ instance Show Guard where
   show (Guard i w a) = "(" ++ show i ++ " :guarded at: " ++
                        show w ++ " :by: " ++ show a
 
-instance Show GuardCxt where
-  show (GuardCxt i gs) = "(" ++ show i ++ " :gcxt: " ++
-                         show (HashSet.toList gs) ++ ")"
+instance Show Invariant where
+  show (Invariant i gs) = "(" ++ show i ++ " :invariant: " ++
+                          show (HashSet.toList gs) ++ ")"
 
 instance Show TransGuards where
   show r =

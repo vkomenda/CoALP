@@ -168,6 +168,25 @@ treeLoopsBy' rel termsAbove knownLoops (NodeOper a bun) =
             ) (foundLoops i ++ loops1) body
     onFibres (_, Left _) loops1 = loops1
 
+branchLoopsBy :: (Eq a, Hashable a) => Rel a -> Path -> TreeOper a ->
+                 [(Int, a, a)]
+branchLoopsBy rel w = branchLoopsBy' rel w [] []
+
+branchLoopsBy' :: (Eq a, Hashable a) => Rel a -> Path -> [(Int, a)] ->
+                  [(Int, a, a)] -> TreeOper a -> [(Int, a, a)]
+branchLoopsBy' rel (i : v) termsAbove knownLoops (NodeOper a bun) =
+  case v of
+   (k : u) -> foldr (onFibre k u) knownLoops (Array.assocs bun)
+   []      -> foundLoops ++ knownLoops
+  where
+    related = filter (\(j, b) -> i == j && a `rel` b) $ termsAbove
+    foundLoops = (\(_, b) -> (i, b, a)) <$> related
+    onFibre k u (j, Right (Just body)) loops1
+      | i == j = branchLoopsBy' rel u ((i, a) : termsAbove)
+                                (foundLoops ++ loops1) (body!!k)
+    onFibre _ _ (_, _) loops1 = loops1
+branchLoopsBy' _ _ _ _ _ = error "branchLoopsBy': invalid path"
+
 type Path = [Int]
 
 data Transition = Transition

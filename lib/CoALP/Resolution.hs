@@ -111,6 +111,11 @@ final = all finalB . Array.elems . nodeBundleOper
     finalB (Right Nothing)   = True
     finalB _                 = False
 
+{-
+open :: TreeOper1 -> Bool
+open
+-}
+
 data Guard = Guard
              {
                guardClause  :: Int
@@ -121,10 +126,10 @@ data Guard = Guard
 
 instance Hashable Guard
 
-data GuardCxt = GuardCxt
+data Invariant = Invariant
                 {
-                  guardCxtClause   :: Int
-                , guardCxtMeasures :: HashSet (Path, Term1)
+                  invariantClause   :: Int
+                , invariantMeasures :: HashSet (Path, Term1)
                 }
               deriving (Eq)
 
@@ -135,10 +140,10 @@ data TransGuards = TransGuards
                    , transGuards :: HashSet Guard
                    }
 
-transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, GuardCxt)]
+transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, Invariant)]
 transitionGuards p t = cxt <$> mguTransitions p t
   where
-    cxt (r, tMgu) = (r, tMgu, GuardCxt i clProj)
+    cxt (r, tMgu) = (r, tMgu, Invariant i clProj)
       where
         w        = transitionPath r
         (v, i)   = (init &&& last) w
@@ -157,7 +162,7 @@ guardTransitions p t = cxt <$> mguTransitions p t
   where
     cxt (r, tMgu) = (TransGuards w s gs, tMgu)
       where
-        gs       = HashSet.fromList $ (\(w1, a) -> Guard i w1 a) <$> clProj
+        gs       = HashSet.fromList $ (\(w1, a) -> Guard i w1 a) <$> ci
         s        = transitionSubst r
         w        = transitionPath r
         (v, i)   = (init &&& last) w
@@ -165,13 +170,24 @@ guardTransitions p t = cxt <$> mguTransitions p t
         aMgu     = fromJust (tMgu `termAt` v)
         measures = snd <$> varReducts aMatch aMgu
         subterms = nonVarSubterms $ clHead ((program p)!i)
-        clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)
-                                 ) subterms
+        clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)) subterms
                    ) `concatMap` measures
+        ciloops :: [Term1Loop]
+        ciloops    = filter (\(k, _, _) -> k == i
+                            ) $ branchLoopsBy haveGuards w t
+        cimeasures :: HashSet Term1
+        cimeasures = HashSet.fromList $ snd <$>
+                     ((\(_, a1, a2) -> varReducts a2 a1) `concatMap` ciloops)
+        ci :: [(Path, Term1)]
+        ci         = (\m -> filter (\t' -> isJust (snd t' `matchMaybe` m)) clProj
+                     ) `concatMap` cimeasures
+        haveGuards :: Rel Term1
+        haveGuards x y = y /= goalHead && not (null (x `recVarReducts` y))
 
-guardCxt :: GuardCxt -> TreeOper1 -> GuardCxt
-guardCxt (GuardCxt i gs) t =
-  GuardCxt i $
+{-
+invariant :: Invariant -> TreeOper1 -> Invariant
+invariant (Invariant i gs) t =
+  Invariant i $
   HashSet.fromList $ filter
   (\g -> any (isJust . matchMaybe (snd g)) $ HashSet.toList $ loopGuardTerms
   ) $ HashSet.toList gs
@@ -186,6 +202,7 @@ guardCxt (GuardCxt i gs) t =
     guardedLoops = (\(j,_,_) -> i == j) `filter` treeLoopsBy haveGuards t
     haveGuards :: Rel Term1
     haveGuards x y = y /= goalHead && not (null (x `recVarReducts` y))
+-}
 
 termAt :: TreeOper a -> Path -> Maybe a
 termAt (NodeOper a _) []      = Just a
@@ -200,20 +217,20 @@ nthOper _ _                 = Nothing
 resolutionLoops :: Program1 -> [Term1Loop]
 resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
   where
-    go :: [GuardCxt] -> TreeOper1 -> [Term1Loop]
+    go :: [Invariant] -> TreeOper1 -> [Term1Loop]
     go gcxts t
       | not (null loops) = loops
       | otherwise = onClauseProj `concatMap` clauseProj
       where
         onClauseProj (_, u, c) =
-          if HashSet.null $ guardCxtMeasures gcxt
+          if HashSet.null $ invariantMeasures gcxt
           then go gcxts u
           else
             if gcxt `elem` gcxts
             then []
             else go (gcxt : gcxts) u
           where
-            gcxt = guardCxt c tMatch
+            gcxt = invariant c tMatch
         clauseProj = transitionGuards p tMatch
         tMatch = matchTree p t
         loops = findLoops $ fst $ runMatch p t
@@ -239,7 +256,7 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
         l = loops u
         e = connect 0 n d
         gcxts = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
-    h ([], 0, u, _) d =
+    h ([], 0, u, _) _ =
       if not (null l)
       then ObservHalt l
       else ObservContinue
