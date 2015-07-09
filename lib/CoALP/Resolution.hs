@@ -249,7 +249,6 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
                 then ObservCut
                 else ObservContinue
       where
-
         l   = loops u
         e   = connect 0 n d
         ci  = transGuards r

@@ -53,11 +53,12 @@ actLoad st = do
     -- separate changes to the program or goals. The latter is more preferable.
     -- 2) Allow for multiple goals in the interpreter state.
 
-actLoadFromTerminal :: IState -> String -> IO IState
-actLoadFromTerminal st fileName = do
-  (cs, gs) <- parseItemsFile fileName
+actLoadFromTerminal :: CmdOptions -> IState -> IO IState
+actLoadFromTerminal op st = do
+  (cs, gs) <- parseItemsFile $ optLoad op
   let pr = Program $ Array.listArray (0, length cs - 1) cs
-      uLoops = resolutionLoops pr
+      (grdLevel, grdCont) = ((max 1 . min 3 . abs) &&& (>= 0)) $ optGuards op
+      uLoops = [[], matchLoops pr, resolutionLoops pr]!!(grdLevel - 1)
   if null uLoops
     then
     do putStrLn $ "\n" ++ show cs ++ "\n" ++ show gs
@@ -234,23 +235,23 @@ interactiveOptionNotValid = do
   putStrLn welcome
   goCoALP iState0
 
-interactiveLoad :: String -> IO IState
-interactiveLoad fileName =
+interactiveLoad :: CmdOptions -> IO IState
+interactiveLoad op =
   putStrLn welcome >>
-  actLoadFromTerminal iState0 fileName >>=
+  actLoadFromTerminal op iState0 >>=
   goCoALP
 
-interactiveLoadRun :: String -> IO IState
-interactiveLoadRun fileName =
+interactiveLoadRun :: CmdOptions -> IO IState
+interactiveLoadRun op =
   putStrLn welcome >>
-  actLoadFromTerminal iState0 fileName >>=
+  actLoadFromTerminal op iState0 >>=
   actSearch >>=
   goCoALP
 
-interactiveLoadRunViewAll :: String -> IO IState
-interactiveLoadRunViewAll fileName =
+interactiveLoadRunViewAll :: CmdOptions -> IO IState
+interactiveLoadRunViewAll op =
   putStrLn welcome >>
-  actLoadFromTerminal iState0 fileName >>=
+  actLoadFromTerminal op iState0 >>=
   actSearch >>=
   actSave >>=
   actView >>=
@@ -266,13 +267,13 @@ goOptions :: CmdOptions -> IO IState
 goOptions op
   | optStdin op = nonInteractive op
   | optLoad op == "" = interactive
-  | not (optRun op) && not (optView op) = interactiveLoad $ optLoad op
-  | optRun op && not (optView op) = interactiveLoadRun $ optLoad op
+  | not (optRun op) && not (optView op) = interactiveLoad op
+  | optRun op && not (optView op) = interactiveLoadRun op
   | optRun op && optView op && (optGraphics op == "all") =
-    interactiveLoadRunViewAll $ optLoad op
+    interactiveLoadRunViewAll op
   | optRun op && optView op && (optGraphics op == "final") =
     -- TODO: implement (without All)
-    interactiveLoadRunViewAll $ optLoad op
+    interactiveLoadRunViewAll op
 goOptions _ = interactiveOptionNotValid
 
 main :: IO IState
