@@ -168,7 +168,7 @@ recVarReducts = go []
 
 nonVarSubterms :: Term a b -> [([Int], Term a b)]
 nonVarSubterms (Var _)    = []
-nonVarSubterms (Fun _ ts) = go [] `concatMap` ts
+nonVarSubterms t0@(Fun _ _) = tail $ go [] t0
   where
     go _ (Var _) = []
     go w t@(Fun _ us) = (w, t) :

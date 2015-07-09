@@ -162,13 +162,13 @@ guardTransitions p t = cxt <$> mguTransitions p t
   where
     cxt (r, tMgu) = (TransGuards w s gs, tMgu)
       where
-        gs       = HashSet.fromList $ (\(w1, a) -> Guard i w1 a) <$> ci
+        gs       = HashSet.fromList $ (\(w1, b) -> Guard i w1 b) <$> ci
         s        = transitionSubst r
         w        = transitionPath r
         (v, i)   = (init &&& last) w
         a        = fromJust (t    `termAt` v)
         aMgu     = fromJust (tMgu `termAt` v)
-        measures = snd <$> varReducts aMgu a
+        measures = snd <$> varReducts a aMgu
         subterms = nonVarSubterms $ clHead ((program p)!i)
         clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)) subterms
                    ) `concatMap` measures
