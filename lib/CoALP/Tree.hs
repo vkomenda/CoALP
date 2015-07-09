@@ -176,15 +176,15 @@ branchLoopsBy' :: (Eq a, Hashable a) => Rel a -> Path -> [(Int, a)] ->
                   [(Int, a, a)] -> TreeOper a -> [(Int, a, a)]
 branchLoopsBy' rel (i : v) termsAbove knownLoops (NodeOper a bun) =
   case v of
-   (k : u) -> foldr (onFibre k u) knownLoops (Array.assocs bun)
+   (k : u) -> onFibre (bun!i) k u
    []      -> foundLoops ++ knownLoops
   where
     related = filter (\(j, b) -> i == j && a `rel` b) $ termsAbove
     foundLoops = (\(_, b) -> (i, b, a)) <$> related
-    onFibre k u (j, Right (Just body)) loops1
-      | i == j = branchLoopsBy' rel u ((i, a) : termsAbove)
-                                (foundLoops ++ loops1) (body!!k)
-    onFibre _ _ (_, _) loops1 = loops1
+    onFibre (Right (Just body)) k u =
+      branchLoopsBy' rel u ((i, a) : termsAbove)
+                     (foundLoops ++ knownLoops) (body!!k)
+    onFibre _ _ _ = error "branchLoopsBy': no clause body"
 branchLoopsBy' _ _ _ _ _ = error "branchLoopsBy': invalid path"
 
 type Path = [Int]

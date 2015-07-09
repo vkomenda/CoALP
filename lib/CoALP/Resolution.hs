@@ -166,9 +166,9 @@ guardTransitions p t = cxt <$> mguTransitions p t
         s        = transitionSubst r
         w        = transitionPath r
         (v, i)   = (init &&& last) w
-        aMatch   = fromJust (t    `termAt` v)
+        a        = fromJust (t    `termAt` v)
         aMgu     = fromJust (tMgu `termAt` v)
-        measures = snd <$> varReducts aMatch aMgu
+        measures = snd <$> varReducts aMgu a
         subterms = nonVarSubterms $ clHead ((program p)!i)
         clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)) subterms
                    ) `concatMap` measures
@@ -177,7 +177,7 @@ guardTransitions p t = cxt <$> mguTransitions p t
                             ) $ branchLoopsBy haveGuards w t
         cimeasures :: HashSet Term1
         cimeasures = HashSet.fromList $ snd <$>
-                     ((\(_, a1, a2) -> varReducts a2 a1) `concatMap` ciloops)
+                     ((\(_, a1, a2) -> recVarReducts a2 a1) `concatMap` ciloops)
         ci :: [(Path, Term1)]
         ci         = (\m -> filter (\t' -> isJust (snd t' `matchMaybe` m)) clProj
                      ) `concatMap` cimeasures
