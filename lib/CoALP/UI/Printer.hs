@@ -75,4 +75,4 @@ instance Show Invariant where
 instance Show TransGuards where
   show r =
     "(" ++ show (transPath r) ++ " <- " ++ show (transSubst r) ++ " | " ++
-    show (transGuards r) ++ ")"
+    show (HashSet.toList $ transGuards r) ++ ")"

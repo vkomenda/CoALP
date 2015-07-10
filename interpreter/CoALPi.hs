@@ -24,12 +24,14 @@ data IState = IState
               , iNext  :: Int                     -- ^ the next variable
               , iDer   :: Maybe (Derivation TreeOper1 Transition TreeOper1)
                           -- ^ derivation
+              , iDerCI :: Maybe (Derivation TreeOper1 TransGuards [Term1Loop])
+                          -- ^ derivation with coinductive invariants
               , iDir   :: String                  -- ^ save directory
               }
 
 -- | The initial state.
 iState0 :: IState
-iState0 = IState Nothing [] 0 Nothing ""
+iState0 = IState Nothing [] 0 Nothing Nothing ""
 
 promptCtrlD :: String -> IO ()
 promptCtrlD thing =
@@ -105,31 +107,54 @@ actGoal st = do
   return $ st {iGoals = gs, iNext = tpsNext tps}
 
 actSearch :: IState -> IO IState
-actSearch st@IState{iDer = Just d} = do
-  let (r1, d1) = continueResolution d
-  putStrLn $ show r1
-  return $ st {iDer = Just d1}
 actSearch st@IState{iProg = Nothing} = do
   putStrLn "There is no program"
   return st
 actSearch st@IState{iGoals = []} = do
   putStrLn "There is no goal"
   return st
+actSearch st@IState{iDer = Just d} = do
+  let (r1, d1) = continueResolution d
+  putStrLn $ show r1
+  return $ st {iDer = Just d1}
 actSearch st@IState{iProg = Just p, iGoals = g:_} = do
   let (r, d) = runResolution p g
   putStrLn $ show r  -- FIXME: pretty print
   return $ st {iDer = Just d}
 
+actCheck :: IState -> IO IState
+actCheck st@IState{iProg = Nothing} = do
+  putStrLn "There is no program"
+  return st
+actCheck st@IState{iGoals = []} = do
+  putStrLn "There is no goal"
+  return st
+actCheck st@IState{iDerCI = Just d} = do
+  let (r1, d1) = continueGuards d
+  putStrLn $ show r1
+  return $ st {iDerCI = Just d1}
+actCheck st@IState{iProg = Just p, iGoals = g:_} = do
+  let (r, d) = runGuards p $ goalTree (Array.bounds $ program p) g
+  putStrLn $ show r  -- FIXME: pretty print
+  return $ st {iDerCI = Just d}
+
 actSave :: IState -> IO IState
-actSave st@IState{iDer = Nothing} = do
+actSave st@IState{iDer = Nothing, iDerCI = Nothing} = do
   putStrLn "Nothing to save"
   return st
-actSave st@IState{iDer = Just d} = do
+actSave st = do
   t <- getCurrentTime
   let fmt = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t
       dir = "CoALPi-" ++ fmt
-  save dir d
-  putStrLn $ "Saved in the directory " ++ dir
+  when (isJust $ iDer st) $ do
+    let d = fromJust $ iDer st
+    save dir d
+    putStrLn $ "Derivation saved in " ++ dir
+  when (isJust $ iDerCI st) $ do
+    let d = fromJust $ iDerCI st
+        dirCheck = dir ++ "-check"
+    saveObservation dirCheck d
+    putStrLn $ "Check results saved in " ++ dirCheck
   return $ st {iDir = dir}
 
 actView :: IState -> IO IState
@@ -157,6 +182,7 @@ act ""           = return
 act "load"       = actLoad
 act "program"    = actProgram
 act "goal"       = actGoal
+act "check"      = actCheck
 act "search"     = actSearch
 act "save"       = actSave
 act "view"       = actView

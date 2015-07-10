@@ -86,6 +86,22 @@ renderDerivation d =
                                      ((show . nodeTermOper) <$> ts)
     showOperTerm _ = "n/a"
 
+renderObservation :: Derivation TreeOper1 TransGuards [Term1Loop] -> String
+renderObservation d =
+  TextDot.showDot $ dotGraph g showGoals showTransition
+  where
+    g = derivation d
+    showTransition r = show r
+    showGoals :: TreeOper1 -> String
+    showGoals t = (if successful t
+                   then "SUCCESS\n"
+                   else "") ++
+                  showOperTerm ((nodeBundleOper t)!0)
+    showOperTerm :: Oper [TreeOper1] -> String
+    showOperTerm (Right (Just ts)) = intercalate "\n" $
+                                     ((show . nodeTermOper) <$> ts)
+    showOperTerm _ = "n/a"
+
 dotGraph :: Graph gr => gr n e -> (n -> String) -> (e -> String) -> Dot ()
 dotGraph d nodeConv edgeConv = do
   let es = Graph.labEdges d -- :: [(Int, Int, b)]
@@ -108,6 +124,20 @@ save dir d =
   flip catch (print :: IOError -> IO ()) $ do
     createDirectory dir
     writeFile (overview ++ extension) $ renderDerivation d
+    sequence_ $ (\(i, t) -> writeFile (base ++ show i ++ extension) $ render t
+                ) <$> Graph.labNodes (derivation d)
+    void $ runCommand convAll
+  where
+    extension = ".gv"
+    base = dir ++ "/"
+    overview = base ++ "overview"
+    convAll = "dot -O -Tpng " ++ base ++ "*" ++ extension
+
+saveObservation :: String -> Derivation TreeOper1 TransGuards [Term1Loop] -> IO ()
+saveObservation dir d =
+  flip catch (print :: IOError -> IO ()) $ do
+    createDirectory dir
+    writeFile (overview ++ extension) $ renderObservation d
     sequence_ $ (\(i, t) -> writeFile (base ++ show i ++ extension) $ render t
                 ) <$> Graph.labNodes (derivation d)
     void $ runCommand convAll

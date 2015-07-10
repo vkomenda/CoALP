@@ -165,7 +165,8 @@ guardTransitions p t = cxt <$> mguTransitions p t
         aMgu     = fromJust (tMgu `termAt` v)
         measures = snd <$> varReducts a aMgu
         subterms = nonVarSubterms $ clHead ((program p)!i)
-        clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)) subterms
+        clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)
+                                 ) subterms
                    ) `concatMap` measures
         ciloops :: [Term1Loop]
         ciloops = filter (\(k, _, _) -> k == i) $ branchLoopsBy haveGuards w t
@@ -176,7 +177,7 @@ guardTransitions p t = cxt <$> mguTransitions p t
         ci = (\m -> filter (\t' -> isJust (snd t' `matchMaybe` m)) clProj
              ) `concatMap` cimeasures
         haveGuards :: Rel Term1
-        haveGuards x y = y /= goalHead && not (null (x `recVarReducts` y))
+        haveGuards x y = y /= goalHead && not (null (x `recReducts` y))
 
 {-
 invariant :: Invariant -> TreeOper1 -> Invariant
@@ -244,7 +245,7 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
       if not (null l)
       then ObservHalt l
       else if HashSet.null ci
-           then ObservContinue
+           then ObservBreak    -- Continue
            else if any (== ci) cxt
                 then ObservCut
                 else ObservContinue
@@ -263,6 +264,10 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
     loops = findLoops . fst . runMatch p
     findLoops Nothing = []
     findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
+
+continueGuards :: Derivation TreeOper1 TransGuards [Term1Loop] ->
+                  (Maybe [Halt [Term1Loop]], Derivation TreeOper1 TransGuards [Term1Loop])
+continueGuards = runState derive
 
 resolutionLoops :: Program1 -> [Term1Loop]
 resolutionLoops p =

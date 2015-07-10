@@ -18,6 +18,7 @@ import Data.Traversable
 data Observ v = ObservContinue
               | ObservCut
               | ObservHalt v
+              | ObservBreak
               deriving Show
 
 data Hashable n => Derivation n e v =
@@ -55,6 +56,7 @@ initDerivation t f h =
 data Halt v = HaltNodeNotFound Node
             | HaltMaxSizeExceeded
             | HaltConditionMet v
+            | HaltBreak
             deriving (Show, Eq)
 
 haltConditionMet :: Halt v -> Maybe v
@@ -69,6 +71,7 @@ runDerivation t f h = runState (observ0 $ h ([], 0, t, []) $ derivation d) d
     observ0 (ObservHalt v) = return $ Just [HaltConditionMet v]
     observ0 ObservCut      = return Nothing
     observ0 ObservContinue = derive
+    observ0 ObservBreak    = return $ Just [HaltBreak]
     d = initDerivation t f h
 
 derive :: (Eq n, Hashable n) => State (Derivation n e v) (Maybe [Halt v])
@@ -124,6 +127,10 @@ queueBreadthFirst n (r, t) = do
           ObservHalt v  ->
             -- do not queue a halting node for further search
             return $ Just $ HaltConditionMet v
+          ObservBreak -> do
+            modify $ \st ->
+              st { derivationQueue = derivationQueue st ++ [i] }
+            return $ Just HaltBreak
        else return $ Just HaltMaxSizeExceeded
    Just j -> do
      modify $ \st ->
