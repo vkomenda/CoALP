@@ -133,29 +133,13 @@ data TransGuards = TransGuards
                      transPath   :: Path
                    , transSubst  :: Subst1
                    , transGuards :: HashSet Guard
+                   , transLoops  :: [Term1Loop]
                    }
-
-transitionGuards :: Program1 -> TreeOper1 -> [(Transition, TreeOper1, Invariant)]
-transitionGuards p t = cxt <$> mguTransitions p t
-  where
-    cxt (r, tMgu) = (r, tMgu, Invariant i clProj)
-      where
-        w        = transitionPath r
-        (v, i)   = (init &&& last) w
-        aMatch   = fromJust (t    `termAt` v)
-        aMgu     = fromJust (tMgu `termAt` v)
-        measures = HashSet.fromList $ snd <$> varReducts aMatch aMgu
-        subterms = nonVarSubterms $ clHead ((program p)!i)
-        clProj   = HashSet.unions $
-                   (\m -> HashSet.fromList $
-                          filter (\s -> isJust (snd s `matchMaybe` m)
-                                 ) subterms
-                   ) <$> HashSet.toList measures
 
 guardTransitions :: Program1 -> TreeOper1 -> [(TransGuards, TreeOper1)]
 guardTransitions p t = cxt <$> mguTransitions p t
   where
-    cxt (r, tMgu) = (TransGuards w s gs, tMgu)
+    cxt (r, tMgu) = (TransGuards w s gs ciloops, tMgu)
       where
         gs       = HashSet.fromList $ (\(w1, b) -> Guard i w1 b) <$> ci
         s        = transitionSubst r
@@ -179,26 +163,6 @@ guardTransitions p t = cxt <$> mguTransitions p t
         haveGuards :: Rel Term1
         haveGuards x y = y /= goalHead && not (null (x `recReducts` y))
 
-{-
-invariant :: Invariant -> TreeOper1 -> Invariant
-invariant (Invariant i gs) t =
-  Invariant i $
-  HashSet.fromList $ filter
-  (\g -> any (isJust . matchMaybe (snd g)) $ HashSet.toList $ loopGuardTerms
-  ) $ HashSet.toList gs
-  where
-    loopGuardTerms :: HashSet Term1
-    loopGuardTerms = HashSet.unions $ snd <$> loopGuards
-    loopGuards :: [(Int, HashSet Term1)]
-    loopGuards = loopGuard <$> guardedLoops
-    loopGuard :: Term1Loop -> (Int, HashSet Term1)
-    loopGuard (j, b, a) = (j, HashSet.fromList $ snd <$> a `recVarReducts` b)
-    guardedLoops :: [Term1Loop]
-    guardedLoops = (\(j,_,_) -> i == j) `filter` treeLoopsBy haveGuards t
-    haveGuards :: Rel Term1
-    haveGuards x y = y /= goalHead && not (null (x `recVarReducts` y))
--}
-
 termAt :: TreeOper a -> Path -> Maybe a
 termAt (NodeOper a _) []      = Just a
 termAt (NodeOper _ b) (i:j:w) = nthOper j (b!i) >>= (`termAt` w)
@@ -207,34 +171,6 @@ termAt _              _       = Nothing
 nthOper :: Int -> Oper [a] -> Maybe a
 nthOper n (Right (Just ts)) = Just (ts!!n)
 nthOper _ _                 = Nothing
-
-{-
-resolutionLoops :: Program1 -> [Term1Loop]
-resolutionLoops p = concat $ go [] <$> (goalTree bounds <$> goals)
-  where
-    go :: [Invariant] -> TreeOper1 -> [Term1Loop]
-    go gcxts t
-      | not (null loops) = loops
-      | otherwise = onClauseProj `concatMap` clauseProj
-      where
-        onClauseProj (_, u, c) =
-          if HashSet.null $ invariantMeasures gcxt
-          then go gcxts u
-          else
-            if gcxt `elem` gcxts
-            then []
-            else go (gcxt : gcxts) u
-          where
-            gcxt = invariant c tMatch
-        clauseProj = transitionGuards p tMatch
-        tMatch = matchTree p t
-        loops = findLoops $ fst $ runMatch p t
-    findLoops Nothing = []
-    findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
-    goals = (\h -> Goal [h]) <$> heads
-    heads = clHead <$> (Array.elems $ program p)
-    bounds = Array.bounds $ program p
--}
 
 runGuards :: Program1 -> TreeOper1 ->
              ( Maybe [Halt [Term1Loop]]
@@ -245,7 +181,7 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
       if not (null l)
       then ObservHalt l
       else if HashSet.null ci
-           then ObservBreak    -- Continue
+           then ObservBreak  -- Continue
            else if any (== ci) cxt
                 then ObservCut
                 else ObservContinue
@@ -266,7 +202,8 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
     findLoops (Just outs) = concat $ catMaybes $ haltConditionMet <$> outs
 
 continueGuards :: Derivation TreeOper1 TransGuards [Term1Loop] ->
-                  (Maybe [Halt [Term1Loop]], Derivation TreeOper1 TransGuards [Term1Loop])
+                  ( Maybe [Halt [Term1Loop]]
+                  , Derivation TreeOper1 TransGuards [Term1Loop] )
 continueGuards = runState derive
 
 resolutionLoops :: Program1 -> [Term1Loop]

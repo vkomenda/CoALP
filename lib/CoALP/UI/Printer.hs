@@ -44,7 +44,7 @@ instance (ShowNoQ a, Show b) => Show (Subst (Term a) b b) where
            (\(i, a) -> show a ++ "/" ++ show i
            ) <$> HashMap.toList (unSubst s)
 
-instance (Show a) => Show (TreeOper a) where
+instance Show a => Show (TreeOper a) where
   show t = goA [] t
     where
       goA prefix (NodeOper a b) =
@@ -65,8 +65,9 @@ instance Show Transition where
     "(" ++ show (transitionPath r) ++ " <- " ++ show (transitionSubst r) ++ ")"
 
 instance Show Guard where
-  show (Guard i w a) = "(" ++ show i ++ " :guarded at: " ++
-                       show w ++ " :by: " ++ show a
+  show (Guard i w a) =
+    "(" ++ show i ++ " :guarded at: " ++
+    show w ++ " :by: " ++ show a
 
 instance Show Invariant where
   show (Invariant i gs) = "(" ++ show i ++ " :invariant: " ++
@@ -75,4 +76,5 @@ instance Show Invariant where
 instance Show TransGuards where
   show r =
     "(" ++ show (transPath r) ++ " <- " ++ show (transSubst r) ++ " | " ++
-    show (HashSet.toList $ transGuards r) ++ ")"
+    show (HashSet.toList $ transGuards r) ++ ")" ++
+    " :branch loops: " ++ show (transLoops r)
