@@ -14,8 +14,8 @@ length (X) :- eq   (X, -> (Y, Z)),
 
 :- length (X).
 
-length (-!)
-plus   (-!)
-cons   (-!)
-nil    (-!)
-eq     (-!, -!)
+% length (-!)
+% plus   (-!)
+% cons   (-!)
+% nil    (-!)
+% eq     (-!, -!)
