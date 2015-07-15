@@ -7,7 +7,7 @@
 
 module CoALP.Subst where
 
-import Prelude hiding ( foldr, any )
+import Prelude hiding ( foldr, any, all )
 
 import CoALP.Term
 
@@ -345,3 +345,16 @@ merge ts sl@(Subst msl) sr@(Subst msr) = do
   where
     vs = HashSet.toList $ HashSet.unions $ varsTerm <$> ts
     disagree (t0, t1, t2) = t0 /= t1 && t0 /= t2 && t1 /= t2
+
+idempotent :: Subst (Term String) Int Int -> Bool
+idempotent s = all ((uncurry (==)) . (appl &&& (appl . appl)) . Var) dom
+  where
+    dom = HashMap.keys $ unSubst s
+    appl = (>>= subst s)
+
+idemRenaming :: Subst (Term String) Int Int -> Bool
+idemRenaming s = all isVar im && idempotent s
+  where
+    im = HashMap.elems $ unSubst s
+    isVar (Var _) = True
+    isVar _       = False
