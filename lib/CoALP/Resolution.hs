@@ -17,10 +17,11 @@ import Data.Array ((!), (//))
 import Data.Hashable
 import qualified Data.Array as Array
 import Data.Foldable
+import Data.Graph.Inductive (Gr, Context, LEdge)
 import qualified Data.Graph.Inductive as Graph
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
-import Data.List (partition)
+import Data.List (partition, delete, (\\))
 import Data.Maybe
 import GHC.Generics (Generic)
 
@@ -58,9 +59,9 @@ mguTransitions p t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
         case oper of
          Right (Just ts)  -> (\(j, u) -> atBoundary (prefix ++ [i, j]) u
                              ) `concatMap` (zip [0..] ts)
-         Left ToBeUnified -> [( prefix ++ [i]
+         Left _           -> [( prefix ++ [i]
                               , clHead (liftedClause i) `mguMaybe` a)]
-         _ -> []
+         _                -> []
       ) `concatMap` (Array.assocs b)
 
     grow :: Maybe Subst1 -> Path -> TreeOper1 -> TreeOper1
@@ -111,6 +112,9 @@ final = all finalB . Array.elems . nodeBundleOper
     finalB (Right Nothing)   = True
     finalB _                 = False
 
+--open :: TreeOper1 -> [Transition] -> [Path]
+--open t rs = [w | w <- toBeUnified t [], w <- transitionPath <$> rs]
+
 data Guard = Guard
              {
                guardClause  :: Int
@@ -121,47 +125,87 @@ data Guard = Guard
 
 instance Hashable Guard
 
-data Invariant = Invariant
-                {
-                  invariantClause   :: Int
-                , invariantMeasures :: HashSet (Path, Term1)
-                }
-              deriving (Eq)
-
 data TransGuards = TransGuards
                    {
                      transPath   :: Path
                    , transSubst  :: Subst1
                    , transGuards :: HashSet Guard
-                   , transLoops  :: [Term1Loop]
+                   , transNew    :: [Path]
                    }
 
+transOfEdge :: LEdge TransGuards -> TransGuards
+transOfEdge (_, _, r) = r
+
 guardTransitions :: Program1 -> TreeOper1 -> [(TransGuards, TreeOper1)]
-guardTransitions p t = cxt <$> mguTransitions p t
+guardTransitions p t = cxt <$> mguTransitions p tMatch
   where
-    cxt (r, tMgu) = (TransGuards w s gs ciloops, tMgu)
+    tMatch = matchTree p t
+    cxt (r@(Transition w' s'), tMgu) = (TransGuards w' s' gs newNodePaths, tMgu)
       where
-        gs       = HashSet.fromList $ (\(w1, b) -> Guard i w1 b) <$> ci
-        s        = transitionSubst r
-        w        = transitionPath r
-        (v, i)   = (init &&& last) w
-        a        = fromJust (t    `termAt` v)
-        aMgu     = fromJust (tMgu `termAt` v)
-        measures = snd <$> varReducts a aMgu
-        subterms = nonVarSubterms $ clHead ((program p)!i)
-        clProj   = (\m -> filter (\u -> isJust (snd u `matchMaybe` m)
-                                 ) subterms
-                   ) `concatMap` measures
-        ciloops :: [Term1Loop]
-        ciloops = filter (\(k, _, _) -> k == i) $ branchLoopsBy haveGuards w t
-        cimeasures :: HashSet Term1
-        cimeasures = HashSet.fromList $ snd <$>
-                     ((\(_, a1, a2) -> recReducts a2 a1) `concatMap` ciloops)
-        ci :: [(Path, Term1)]
-        ci = (\m -> filter (\t' -> isJust (snd t' `matchMaybe` m)) clProj
-             ) `concatMap` cimeasures
+        gs = HashSet.fromList $ (\(i, v, b) -> Guard i v b) <$>
+             (ci (transitionPath r) ++ ci `concatMap` newNodePaths)
+        aMatch v = fromJust (tMatch `termAt` v)
+        aMgu   v = fromJust (tMgu   `termAt` v)
+        measures v = snd <$> varReducts (aMatch v) (aMgu v)
+        subterms i  = nonVarSubterms $ clHead ((program p)!i)
+        clProj i v =
+          (\(v0, u) -> (i, v0, u)) <$>
+          (\m -> (\u -> isJust (snd u `matchMaybe` m)
+                 ) `filter` subterms i
+          ) `concatMap` measures v
+        tLeafNs      = leafPaths t
+        tMatchLeafNs = leafPaths tMatch
+        newNodePaths = tMatchLeafNs \\ tLeafNs
+        ciloops :: Int -> Path -> [Term1Loop]
+        ciloops i v = filter (\(k, _, _) -> k == i) $ bloops $ v ++ [i]
+        bloops w = branchLoopsBy haveGuards w tMatch
+        cimeasures :: Int -> Path -> HashSet Term1
+        cimeasures i v =
+          HashSet.fromList $ snd <$>
+          ((\(_, a1, a2) -> recReducts a2 a1) `concatMap` ciloops i v)
+        ci :: Path -> [(Int, Path, Term1)]
+        ci w = (\m -> (\(_, _, u) -> isJust (u `matchMaybe` m)
+                      ) `filter` clProj i v
+               ) `concatMap` cimeasures i v
+          where
+            (v, i) = (init &&& last) w
         haveGuards :: Rel Term1
         haveGuards x y = y /= goalHead && not (null (x `recReducts` y))
+
+siblingsGuards :: Context TreeOper1 TransGuards ->
+                  Gr TreeOper1 TransGuards -> HashSet Guard
+siblingsGuards ([(r, _)], _, _, _) e =
+  if not (null sibInvariants) then head sibInvariants else HashSet.empty
+  where
+    sibInvariants = [s | s <- neSets, s `elem` delete s neSets]
+    neSets = filter (not . HashSet.null) sibGuardsSets
+    sibGuardsSets :: [HashSet Guard]
+    sibGuardsSets = (\s -> HashSet.unions (guardsOf <$> s)) <$> siblings
+    l = length $ transPath r
+    ls = takeWhile (> 3) $ tail $ iterate (flip (-) 2) l
+    siblings :: [[LEdge TransGuards]]
+    siblings = siblingPathEdges <$> ls
+    siblingPathEdges :: Int -> [LEdge TransGuards]
+    siblingPathEdges k =
+      filter ((== k) . length . transPath . transOfEdge) $ Graph.labEdges e
+    guardsOf :: LEdge TransGuards -> HashSet Guard
+    guardsOf = transGuards . transOfEdge
+siblingsGuards _ _ = error "siblingsGuards: wrong arguments"
+
+{-
+pathCont :: TreeOper1 -> Path -> Path
+pathCont (NodeOper _  bun) (i : j : w) = onFibre (bun!i)
+  where
+    onFibre (Right (Just ts)) = pathCont (ts!!j) w
+    onFibre _ = w
+pathCont _ []  = []
+pathCont _ [i] = []
+
+evenElems :: [a] -> [a]
+evenElems []          = []
+evenElems [a]         = []
+evenElems (a : b : w) = b : evenElems w
+-}
 
 termAt :: TreeOper a -> Path -> Maybe a
 termAt (NodeOper a _) []      = Just a
@@ -175,13 +219,16 @@ nthOper _ _                 = Nothing
 runGuards :: Program1 -> TreeOper1 ->
              ( Maybe [Halt [Term1Loop]]
              , Derivation TreeOper1 TransGuards [Term1Loop] )
-runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
+runGuards p t = runDerivation t (guardTransitions p) h
   where
-    h ([(r, n)], _, u, _) d =
+    h c@([(r, n)], _, u, _) d =
       if not (null l)
       then ObservHalt l
       else if HashSet.null ci
-           then ObservBreak  -- Continue
+           then if idemRenaming (transSubst r) &&
+                   not (HashSet.null (siblingsGuards c e))
+                then ObservCut
+                else ObservContinue   -- Break
            else if any (== ci) cxt
                 then ObservCut
                 else ObservContinue
@@ -189,7 +236,7 @@ runGuards p t = runDerivation t (guardTransitions p . matchTree p) h
         l   = loops u
         e   = connect 0 n d
         ci  = transGuards r
-        cxt = (\(_, _, r0) -> transGuards r0) <$> Graph.labEdges e
+        cxt = (transGuards . transOfEdge) <$> Graph.labEdges e
     h ([], 0, u, _) _ =
       if not (null l)
       then ObservHalt l

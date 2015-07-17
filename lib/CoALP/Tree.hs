@@ -132,7 +132,7 @@ matchTree p0 t@(NodeOper a b) =
   where
     grow :: (Int, Oper [TreeOper1]) -> Oper [TreeOper1]
     grow (_, (Right (Just ts)))  = Right $ Just (matchTree p <$> ts)
-    grow (i, (Left ToBeMatched)) =
+    grow (i, (Left _)) =
       case clHead c `matchMaybe` a of
        Nothing -> Left ToBeUnified
        Just s  -> Right $ Just (matchTree p <$>
@@ -189,6 +189,25 @@ branchLoopsBy' _ _ _ _ _ = error "branchLoopsBy': invalid path"
 
 type Path = [Int]
 
+leafPaths :: TreeOper a -> [Path]
+leafPaths = go []
+  where
+    go :: Path -> TreeOper a -> [Path]
+    go w t = (\(i, oper) -> onFibre oper $ w ++ [i]
+             ) `concatMap` Array.assocs (nodeBundleOper t)
+    onFibre (Right (Just body)) w
+      | not (null body) =
+        (\(j, b) -> go (w ++ [j]) b) `concatMap` zip [0..] body
+    onFibre _ w = [w]
+
+subtreeAt :: TreeOper1 -> Path -> Either (Oper [TreeOper1]) TreeOper1
+subtreeAt t                []      = Right t
+subtreeAt (NodeOper _ bun) [i]     = Left (bun!i)
+subtreeAt (NodeOper _ bun) (i:j:w) = onFibre (bun!i) j
+  where
+    onFibre (Right (Just body)) j0   = subtreeAt (body!!j0) w
+    onFibre _                   _    = error "subtreeAt: no body"
+
 data Transition = Transition
                   {
                     transitionPath  :: Path
@@ -222,7 +241,7 @@ matchTransitions p0 t = growSuccessful $ failedAndSuccessful $ atBoundary [] t
         case oper of
          Right (Just ts)  -> (\(j, u) -> atBoundary (prefix ++ [i, j]) u
                              ) `concatMap` (zip [0..] ts)
-         Left ToBeMatched -> [( prefix ++ [i]
+         Left _           -> [( prefix ++ [i]
                               , clHead ((program p)!i) `matchMaybe` a)]
          _ -> []
       ) `concatMap` (Array.assocs b)
