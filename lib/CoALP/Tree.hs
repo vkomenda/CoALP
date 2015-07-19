@@ -160,7 +160,9 @@ treeLoopsBy' :: (Eq a, Hashable a) => Rel a -> [(Int, a)] -> [(Int, a, a)] ->
 treeLoopsBy' rel termsAbove knownLoops (NodeOper a bun) =
   foldr onFibres knownLoops (Array.assocs bun)
   where
-    related i = filter (\(j, b) -> i == j && a `rel` b) $ termsAbove
+    related i = filter (\(j, b) ->
+                         i == j && a `rel` b && branching (bun!i)
+                       ) termsAbove
     foundLoops i = (\(_, b) -> (i, b, a)) <$> related i
     onFibres (_, Right Nothing) loops1 = loops1
     onFibres (i, Right (Just body)) loops1 =
@@ -179,13 +181,19 @@ branchLoopsBy' rel (i : v) termsAbove knownLoops (NodeOper a bun) =
    (k : u) -> onFibre (bun!i) k u
    []      -> foundLoops ++ knownLoops
   where
-    related = filter (\(j, b) -> i == j && a `rel` b) $ termsAbove
+    related = filter (\(j, b) ->
+                       i == j && a `rel` b && branching (bun!i)
+                     ) termsAbove
     foundLoops = (\(_, b) -> (i, b, a)) <$> related
     onFibre (Right (Just body)) k u =
       branchLoopsBy' rel u ((i, a) : termsAbove)
                      (foundLoops ++ knownLoops) (body!!k)
     onFibre _ _ _ = error "branchLoopsBy': no clause body"
 branchLoopsBy' _ _ _ _ _ = error "branchLoopsBy': invalid path"
+
+branching :: Oper a -> Bool
+branching (Right (Just _)) = True
+branching _                = False
 
 type Path = [Int]
 
@@ -195,6 +203,7 @@ leafPaths = go []
     go :: Path -> TreeOper a -> [Path]
     go w t = (\(i, oper) -> onFibre oper $ w ++ [i]
              ) `concatMap` Array.assocs (nodeBundleOper t)
+    onFibre (Right Nothing) _ = []
     onFibre (Right (Just body)) w
       | not (null body) =
         (\(j, b) -> go (w ++ [j]) b) `concatMap` zip [0..] body

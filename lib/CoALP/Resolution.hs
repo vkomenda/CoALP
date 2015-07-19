@@ -106,10 +106,9 @@ successful = any hasSuccess . Array.elems . nodeBundleOper
     hasSuccess _                 = False
 
 final :: TreeOper1 -> Bool
-final = all finalB . Array.elems . nodeBundleOper
+final = any finalB . Array.elems . nodeBundleOper
   where
     finalB (Right (Just ts)) = all final ts
-    finalB (Right Nothing)   = True
     finalB _                 = False
 
 --open :: TreeOper1 -> [Transition] -> [Path]
@@ -148,7 +147,7 @@ guardTransitions p t = cxt <$> mguTransitions p tMatch
         aMgu   v = fromJust (tMgu   `termAt` v)
         measures v = snd <$> varReducts (aMatch v) (aMgu v)
         subterms i  = nonVarSubterms $ clHead ((program p)!i)
-        clProj i v =
+        clProj v i =
           (\(v0, u) -> (i, v0, u)) <$>
           (\m -> (\u -> isJust (snd u `matchMaybe` m)
                  ) `filter` subterms i
@@ -156,17 +155,17 @@ guardTransitions p t = cxt <$> mguTransitions p tMatch
         tLeafNs      = leafPaths t
         tMatchLeafNs = leafPaths tMatch
         newNodePaths = tMatchLeafNs \\ tLeafNs
-        ciloops :: Int -> Path -> [Term1Loop]
-        ciloops i v = filter (\(k, _, _) -> k == i) $ bloops $ v ++ [i]
+        ciloops :: Path -> Int -> [Term1Loop]
+        ciloops v i = filter (\(k, _, _) -> k == i) $ bloops $ v ++ [i]
         bloops w = branchLoopsBy haveGuards w tMatch
-        cimeasures :: Int -> Path -> HashSet Term1
-        cimeasures i v =
+        cimeasures :: Path -> Int -> HashSet Term1
+        cimeasures v i =
           HashSet.fromList $ snd <$>
-          ((\(_, a1, a2) -> recReducts a2 a1) `concatMap` ciloops i v)
+          ((\(_, a1, a2) -> recReducts a2 a1) `concatMap` ciloops v i)
         ci :: Path -> [(Int, Path, Term1)]
         ci w = (\m -> (\(_, _, u) -> isJust (u `matchMaybe` m)
-                      ) `filter` clProj i v
-               ) `concatMap` cimeasures i v
+                      ) `filter` clProj v i
+               ) `concatMap` cimeasures v i
           where
             (v, i) = (init &&& last) w
         haveGuards :: Rel Term1
@@ -225,10 +224,12 @@ runGuards p t = runDerivation t (guardTransitions p) h
       if not (null l)
       then ObservHalt l
       else if HashSet.null ci
-           then if idemRenaming (transSubst r) &&
+           then {-
+                if idemRenaming (transSubst r) &&
                    not (HashSet.null (siblingsGuards c e))
                 then ObservCut
-                else ObservContinue   -- Break
+                else -}
+             ObservContinue   -- Break
            else if any (== ci) cxt
                 then ObservCut
                 else ObservContinue
