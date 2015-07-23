@@ -1,0 +1,26 @@
+eq (app (app (fix, F), G)) :-
+  eq (app (F, app (app (fix, app (app (comp, G), F)), G))).
+
+eq (app (app (gs, A), R)) :- eq (A), eq (R).
+
+eq (app (pair, A))        :- eq (A).
+
+eq (app (app (app (comp, F), G), A)) :-
+  eq (app (F, app (G, A))).
+
+eq (unit).
+
+coinductive(eq) :-.
+
+:- eq (app (app (fix, app (gs, unit)), pair)).
+
+
+
+% produce trace:
+% eq(app(app(fix, app(app(comp, pair), app(gs, unit))), pair))
+
+% eq(app(app(fix, app(app(comp, pair), app(app(comp, pair), app(gs, unit)))), pair))
+
+% eq(app(app(fix, app(app(comp, pair), app(app(comp, pair), app(app(comp, pair), app(gs, unit))))), pair))
+
+% eq(app(app(fix, app(app(comp, pair), app(app(comp, pair), app(app(comp, pair), app(app(comp, pair), app(gs, unit)))))), pair))
